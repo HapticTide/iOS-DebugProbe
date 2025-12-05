@@ -27,7 +27,7 @@ public final class DebugProbeSettings {
     // MARK: - Default Values
 
     private enum Defaults {
-        static let host = "127.0.0.1"
+        static let host = "10.0.210.97"
         static let port = 8081
         static let token = "debug-token-2025"
     }
