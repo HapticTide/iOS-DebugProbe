@@ -21,6 +21,7 @@ public struct DeviceInfo: Codable {
     public let appVersion: String
     public let buildNumber: String
     public let platform: String
+    public let isSimulator: Bool
     public var captureEnabled: Bool
     public var logCaptureEnabled: Bool
 
@@ -33,6 +34,7 @@ public struct DeviceInfo: Codable {
         appVersion: String,
         buildNumber: String,
         platform: String = "iOS",
+        isSimulator: Bool = false,
         captureEnabled: Bool = true,
         logCaptureEnabled: Bool = true
     ) {
@@ -44,6 +46,7 @@ public struct DeviceInfo: Codable {
         self.appVersion = appVersion
         self.buildNumber = buildNumber
         self.platform = platform
+        self.isSimulator = isSimulator
         self.captureEnabled = captureEnabled
         self.logCaptureEnabled = logCaptureEnabled
     }
@@ -54,6 +57,12 @@ public struct DeviceInfo: Codable {
             let device = UIDevice.current
             let bundle = Bundle.main
 
+            #if targetEnvironment(simulator)
+            let isSimulator = true
+            #else
+            let isSimulator = false
+            #endif
+
             return DeviceInfo(
                 deviceId: device.identifierForVendor?.uuidString ?? UUID().uuidString,
                 deviceName: device.name,
@@ -62,7 +71,8 @@ public struct DeviceInfo: Codable {
                 appName: bundle.infoDictionary?["CFBundleDisplayName"] as? String ?? bundle.infoDictionary?["CFBundleName"] as? String ?? "Unknown",
                 appVersion: bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0",
                 buildNumber: bundle.infoDictionary?[kCFBundleVersionKey as String] as? String ?? "0",
-                platform: "iOS"
+                platform: "iOS",
+                isSimulator: isSimulator
             )
         }
     #endif
