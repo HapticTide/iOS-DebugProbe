@@ -62,6 +62,7 @@ public enum DebugLog {
         case chaos
         case mock
         case webSocket
+        case database
 
         var tag: String {
             switch self {
@@ -73,6 +74,7 @@ public enum DebugLog {
             case .chaos: "[Chaos]"
             case .mock: "[Mock]"
             case .webSocket: "[WebSocket]"
+            case .database: "[Database]"
             }
         }
     }

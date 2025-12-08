@@ -61,7 +61,7 @@ public final class DebugBridgeClient: NSObject {
 
     public var onStateChanged: ((ConnectionState) -> Void)?
     public var onMockRulesReceived: (([MockRule]) -> Void)?
-    public var onCaptureToggled: ((Bool, Bool) -> Void)?
+    public var onCaptureToggled: ((Bool, Bool, Bool, Bool) -> Void)?
     public var onError: ((Error) -> Void)?
 
     // MARK: - Private Properties
@@ -209,9 +209,9 @@ public final class DebugBridgeClient: NSObject {
                 startRecovery()
             }
 
-        case let .toggleCapture(network, log):
+        case let .toggleCapture(network, log, websocket, database):
             DispatchQueue.main.async { [weak self] in
-                self?.onCaptureToggled?(network, log)
+                self?.onCaptureToggled?(network, log, websocket, database)
             }
 
         case let .updateMockRules(rules):

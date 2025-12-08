@@ -26,9 +26,12 @@ public final class DebugProbeSettings {
 
     // MARK: - Default Values
 
+    /// 默认主机地址 (可配置)
+    public static var defaultHost = "127.0.0.1"
+    /// 默认端口 (可配置)
+    public static var defaultPort = 8081
+
     private enum Defaults {
-        static let host = "10.0.210.97"
-        static let port = 8081
         static let token = "debug-token-2025"
     }
 
@@ -59,7 +62,7 @@ public final class DebugProbeSettings {
                 return plistValue
             }
             // 3. 使用默认值
-            return Defaults.host
+            return Self.defaultHost
         }
         set {
             userDefaults.set(newValue, forKey: Keys.hubHost)
@@ -77,7 +80,7 @@ public final class DebugProbeSettings {
             if let plistValue = Bundle.main.infoDictionary?["DEBUGHUB_PORT"] as? Int, plistValue > 0 {
                 return plistValue
             }
-            return Defaults.port
+            return Self.defaultPort
         }
         set {
             userDefaults.set(newValue, forKey: Keys.hubPort)

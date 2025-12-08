@@ -70,7 +70,7 @@ func application(_ application: UIApplication, didFinishLaunchingWithOptions...)
     
     #if DEBUG
     let config = DebugProbe.Configuration(
-        hubURL: URL(string: "ws://192.168.1.100:8081/debug-bridge")!,
+        hubURL: URL(string: "ws://127.0.0.1:8081/debug-bridge")!,
         token: "your-device-token"
     )
     DebugProbe.shared.start(with: config)
@@ -144,7 +144,7 @@ DebugProbe/
 │   │   ├── DebugBridgeClient.swift   # WebSocket 通信
 │   │   ├── DebugEventBus.swift       # 事件总线
 │   │   ├── BreakpointEngine.swift    # 断点引擎
-│   │   ├── ChaosEngine.swift         # 混沌工程引擎
+│   │   ├── ChaosEngine.swift         # 混沌(故障注入)工程引擎
 │   │   └── EventPersistenceQueue.swift # 事件持久化
 │   ├── Network/
 │   │   ├── CaptureURLProtocol.swift  # HTTP 拦截

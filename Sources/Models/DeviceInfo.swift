@@ -24,6 +24,9 @@ public struct DeviceInfo: Codable {
     public let isSimulator: Bool
     public var captureEnabled: Bool
     public var logCaptureEnabled: Bool
+    public var wsCaptureEnabled: Bool
+    public var dbInspectorEnabled: Bool
+    public let appIcon: String?
 
     public init(
         deviceId: String,
@@ -36,7 +39,10 @@ public struct DeviceInfo: Codable {
         platform: String = "iOS",
         isSimulator: Bool = false,
         captureEnabled: Bool = true,
-        logCaptureEnabled: Bool = true
+        logCaptureEnabled: Bool = true,
+        wsCaptureEnabled: Bool = true,
+        dbInspectorEnabled: Bool = true,
+        appIcon: String? = nil
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
@@ -49,6 +55,9 @@ public struct DeviceInfo: Codable {
         self.isSimulator = isSimulator
         self.captureEnabled = captureEnabled
         self.logCaptureEnabled = logCaptureEnabled
+        self.wsCaptureEnabled = wsCaptureEnabled
+        self.dbInspectorEnabled = dbInspectorEnabled
+        self.appIcon = appIcon
     }
 
     #if canImport(UIKit)
@@ -72,8 +81,20 @@ public struct DeviceInfo: Codable {
                 appVersion: bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0",
                 buildNumber: bundle.infoDictionary?[kCFBundleVersionKey as String] as? String ?? "0",
                 platform: "iOS",
-                isSimulator: isSimulator
+                isSimulator: isSimulator,
+                appIcon: getAppIconBase64()
             )
+        }
+
+        private static func getAppIconBase64() -> String? {
+            guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+                  let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
+                  let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String],
+                  let lastIcon = iconFiles.last,
+                  let image = UIImage(named: lastIcon) else {
+                return nil
+            }
+            return image.pngData()?.base64EncodedString()
         }
     #endif
 }

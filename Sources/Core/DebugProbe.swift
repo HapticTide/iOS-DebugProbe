@@ -100,9 +100,11 @@ public final class DebugProbe {
         }
 
         // 捕获开关回调
-        bridgeClient.onCaptureToggled = { [weak self] network, log in
+        bridgeClient.onCaptureToggled = { [weak self] network, log, websocket, database in
             self?.setNetworkCaptureEnabled(network)
             self?.setLogCaptureEnabled(log)
+            self?.setWebSocketCaptureEnabled(websocket)
+            self?.setDatabaseInspectorEnabled(database)
         }
 
         // 连接状态回调
@@ -187,7 +189,7 @@ public final class DebugProbe {
     /// 使用新的配置重新连接
     /// 用于运行时配置变更后重新连接到新的 DebugHub
     public func reconnect(hubURL: URL, token: String) {
-        guard isStarted, var config = configuration else {
+        guard isStarted, let config = configuration else {
             DebugLog.debug("Not started, cannot reconnect")
             return
         }
@@ -198,7 +200,6 @@ public final class DebugProbe {
         bridgeClient.disconnect()
 
         // 更新配置
-        let newConfig = Configuration(hubURL: hubURL, token: token)
         configuration = Configuration(
             hubURL: hubURL,
             token: token
@@ -257,6 +258,32 @@ public final class DebugProbe {
                 ddLogger = nil
             }
         #endif
+    }
+
+    // MARK: - WebSocket Capture Control
+
+    private var isWebSocketCaptureEnabled: Bool = true
+
+    public func setWebSocketCaptureEnabled(_ enabled: Bool) {
+        isWebSocketCaptureEnabled = enabled
+        DebugLog.info(.webSocket, "WebSocket capture \(enabled ? "enabled" : "disabled")")
+    }
+
+    public func isWebSocketCaptureActive() -> Bool {
+        return isWebSocketCaptureEnabled
+    }
+
+    // MARK: - Database Inspector Control
+
+    private var isDatabaseInspectorEnabled: Bool = true
+
+    public func setDatabaseInspectorEnabled(_ enabled: Bool) {
+        isDatabaseInspectorEnabled = enabled
+        DebugLog.info(.database, "Database inspector \(enabled ? "enabled" : "disabled")")
+    }
+
+    public func isDatabaseInspectorActive() -> Bool {
+        return isDatabaseInspectorEnabled
     }
 
     // MARK: - WebSocket Debug Hooks

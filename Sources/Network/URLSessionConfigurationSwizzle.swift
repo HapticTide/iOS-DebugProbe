@@ -100,7 +100,7 @@ extension URLSessionConfiguration {
     /// Swizzled default configuration getter
     @objc dynamic class var swizzled_default: URLSessionConfiguration {
         // 调用原始实现（因为已经 swizzle，所以这里实际调用的是原始的 .default）
-        let configuration = swizzled_default
+        let configuration = Self.swizzled_default
         injectCaptureProtocol(into: configuration)
         return configuration
     }
@@ -108,7 +108,7 @@ extension URLSessionConfiguration {
     /// Swizzled ephemeral configuration getter
     @objc dynamic class var swizzled_ephemeral: URLSessionConfiguration {
         // 调用原始实现
-        let configuration = swizzled_ephemeral
+        let configuration = Self.swizzled_ephemeral
         injectCaptureProtocol(into: configuration)
         return configuration
     }
