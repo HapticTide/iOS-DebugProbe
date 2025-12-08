@@ -15,6 +15,7 @@ import Foundation
 public struct DeviceInfo: Codable {
     public let deviceId: String
     public let deviceName: String
+    public let deviceModel: String
     public let systemName: String
     public let systemVersion: String
     public let appName: String
@@ -31,6 +32,7 @@ public struct DeviceInfo: Codable {
     public init(
         deviceId: String,
         deviceName: String,
+        deviceModel: String,
         systemName: String,
         systemVersion: String,
         appName: String,
@@ -46,6 +48,7 @@ public struct DeviceInfo: Codable {
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
+        self.deviceModel = deviceModel
         self.systemName = systemName
         self.systemVersion = systemVersion
         self.appName = appName
@@ -67,17 +70,19 @@ public struct DeviceInfo: Codable {
             let bundle = Bundle.main
 
             #if targetEnvironment(simulator)
-            let isSimulator = true
+                let isSimulator = true
             #else
-            let isSimulator = false
+                let isSimulator = false
             #endif
 
             return DeviceInfo(
                 deviceId: device.identifierForVendor?.uuidString ?? UUID().uuidString,
                 deviceName: device.name,
+                deviceModel: getDeviceModel(),
                 systemName: device.systemName,
                 systemVersion: device.systemVersion,
-                appName: bundle.infoDictionary?["CFBundleDisplayName"] as? String ?? bundle.infoDictionary?["CFBundleName"] as? String ?? "Unknown",
+                appName: bundle.infoDictionary?["CFBundleDisplayName"] as? String ?? bundle
+                    .infoDictionary?["CFBundleName"] as? String ?? "Unknown",
                 appVersion: bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0",
                 buildNumber: bundle.infoDictionary?[kCFBundleVersionKey as String] as? String ?? "0",
                 platform: "iOS",
@@ -87,14 +92,39 @@ public struct DeviceInfo: Codable {
         }
 
         private static func getAppIconBase64() -> String? {
-            guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
-                  let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
-                  let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String],
-                  let lastIcon = iconFiles.last,
-                  let image = UIImage(named: lastIcon) else {
+            guard
+                let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+                let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
+                let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String],
+                let lastIcon = iconFiles.last,
+                let image = UIImage(named: lastIcon) else {
                 return nil
             }
             return image.pngData()?.base64EncodedString()
+        }
+
+        /// 获取设备型号标识符（如 iPhone15,2）
+        private static func getDeviceModel() -> String {
+            var systemInfo = utsname()
+            uname(&systemInfo)
+            let machineMirror = Mirror(reflecting: systemInfo.machine)
+            let identifier = machineMirror.children.reduce("") { identifier, element in
+                guard let value = element.value as? Int8, value != 0 else {
+                    return identifier
+                }
+                return identifier + String(UnicodeScalar(UInt8(value)))
+            }
+            return identifier
+        }
+    #else
+        static func macDeviceModel() -> String {
+            var size: size_t = 0
+            sysctlbyname("hw.model", nil, &size, nil, 0)
+
+            var model = [CChar](repeating: 0, count: Int(size))
+            sysctlbyname("hw.model", &model, &size, nil, 0)
+
+            return String(cString: model)
         }
     #endif
 }

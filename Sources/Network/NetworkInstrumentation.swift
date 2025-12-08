@@ -195,7 +195,7 @@ public final class CaptureURLProtocol: URLProtocol {
     private var isMocked: Bool = false
     private var mockRuleId: String?
     private var taskMetrics: URLSessionTaskMetrics?
-    
+
     /// 是否需要拦截响应阶段（延迟发送响应给客户端）
     private var shouldInterceptResponse: Bool = false
     /// 响应是否已经发送给客户端
@@ -204,6 +204,9 @@ public final class CaptureURLProtocol: URLProtocol {
     // MARK: - URLProtocol Override
 
     override public class func canInit(with request: URLRequest) -> Bool {
+        // 检查 HTTP 捕获是否启用
+        guard DebugProbe.shared.isNetworkCaptureActive() else { return false }
+
         // 防止循环拦截
         if URLProtocol.property(forKey: handledKey, in: request) != nil {
             return false
@@ -305,30 +308,34 @@ public final class CaptureURLProtocol: URLProtocol {
         if BreakpointEngine.shared.isEnabled {
             // 检查是否有响应阶段的断点规则
             shouldInterceptResponse = BreakpointEngine.shared.hasResponseBreakpoint(for: modifiedRequest)
-            
+
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
+                guard let self else { return }
                 let result = await BreakpointEngine.shared.checkRequestBreakpoint(
-                    requestId: self.requestId,
+                    requestId: requestId,
                     request: modifiedRequest
                 )
                 switch result {
                 case let .proceed(finalRequest):
-                    self.proceedWithRequest(finalRequest)
+                    proceedWithRequest(finalRequest)
                 case .abort:
-                    let error = NSError(domain: "DebugProbe", code: -1, userInfo: [NSLocalizedDescriptionKey: "Request aborted by breakpoint"])
-                    self.client?.urlProtocol(self, didFailWithError: error)
-                    self.recordHTTPEvent(request: modifiedRequest, response: nil, data: nil, error: error, duration: 0)
+                    let error = NSError(
+                        domain: "DebugProbe",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: "Request aborted by breakpoint"]
+                    )
+                    client?.urlProtocol(self, didFailWithError: error)
+                    recordHTTPEvent(request: modifiedRequest, response: nil, data: nil, error: error, duration: 0)
                 case let .mockResponse(snapshot):
                     let response = HTTPEvent.Response(
                         statusCode: snapshot.statusCode,
                         headers: snapshot.headers,
                         body: snapshot.body,
                         endTime: Date(),
-                        duration: Date().timeIntervalSince(self.startTime),
+                        duration: Date().timeIntervalSince(startTime),
                         errorDescription: nil
                     )
-                    self.handleMockResponse(response, for: modifiedRequest)
+                    handleMockResponse(response, for: modifiedRequest)
                 }
             }
             return
@@ -337,7 +344,7 @@ public final class CaptureURLProtocol: URLProtocol {
         // 正常流程
         proceedWithRequest(modifiedRequest)
     }
-    
+
     /// 实际发送请求
     private func proceedWithRequest(_ request: URLRequest) {
         // 标记请求已处理，防止循环拦截
@@ -568,7 +575,7 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
         self.response = response
-        
+
         // 如果需要拦截响应阶段，延迟发送响应给客户端
         if !shouldInterceptResponse {
             client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -579,7 +586,7 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
 
     public func urlSession(_: URLSession, dataTask _: URLSessionDataTask, didReceive data: Data) {
         receivedData.append(data)
-        
+
         // 如果需要拦截响应阶段，延迟发送数据给客户端
         if !shouldInterceptResponse {
             client?.urlProtocol(self, didLoad: data)
@@ -623,38 +630,38 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
         // 响应阶段断点检查
         if BreakpointEngine.shared.isEnabled {
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
-                
+                guard let self else { return }
+
                 let modifiedResponse = await BreakpointEngine.shared.checkResponseBreakpoint(
-                    requestId: self.requestId,
-                    request: self.request,
+                    requestId: requestId,
+                    request: request,
                     response: httpResponse,
-                    body: self.receivedData
+                    body: receivedData
                 )
-                
-                if let modifiedResponse = modifiedResponse {
+
+                if let modifiedResponse {
                     // 使用修改后的响应
-                    self.handleBreakpointModifiedResponse(
+                    handleBreakpointModifiedResponse(
                         modifiedResponse,
-                        originalRequest: self.request,
+                        originalRequest: request,
                         duration: duration
                     )
                 } else {
                     // 使用原始响应
                     // 如果响应还没发送，现在发送
-                    if self.shouldInterceptResponse, !self.responseAlreadySent {
-                        self.client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
-                        self.client?.urlProtocol(self, didLoad: self.receivedData)
+                    if shouldInterceptResponse, !responseAlreadySent {
+                        client?.urlProtocol(self, didReceive: httpResponse, cacheStoragePolicy: .notAllowed)
+                        client?.urlProtocol(self, didLoad: receivedData)
                     }
-                    
-                    self.recordHTTPEvent(
-                        request: self.request,
+
+                    recordHTTPEvent(
+                        request: request,
                         response: httpResponse,
-                        data: self.receivedData,
+                        data: receivedData,
                         error: nil,
                         duration: duration
                     )
-                    self.client?.urlProtocolDidFinishLoading(self)
+                    client?.urlProtocolDidFinishLoading(self)
                 }
             }
         } else {
@@ -669,7 +676,7 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
             client?.urlProtocolDidFinishLoading(self)
         }
     }
-    
+
     /// 处理断点修改后的响应
     private func handleBreakpointModifiedResponse(
         _ modifiedResponse: BreakpointResponseSnapshot,
@@ -693,20 +700,20 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
             client?.urlProtocol(self, didFailWithError: error)
             return
         }
-        
+
         // 构造修改后的 HTTPURLResponse
         guard let url = originalRequest.url else {
             client?.urlProtocolDidFinishLoading(self)
             return
         }
-        
+
         let newHttpResponse = HTTPURLResponse(
             url: url,
             statusCode: modifiedResponse.statusCode,
             httpVersion: "HTTP/1.1",
             headerFields: modifiedResponse.headers
         )!
-        
+
         // 记录事件
         recordHTTPEvent(
             request: originalRequest,
@@ -715,14 +722,14 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
             error: nil,
             duration: duration
         )
-        
+
         // 发送修改后的响应给客户端
         client?.urlProtocol(self, didReceive: newHttpResponse, cacheStoragePolicy: .notAllowed)
-        
+
         if let body = modifiedResponse.body {
             client?.urlProtocol(self, didLoad: body)
         }
-        
+
         client?.urlProtocolDidFinishLoading(self)
     }
 }

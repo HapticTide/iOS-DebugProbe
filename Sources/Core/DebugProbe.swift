@@ -82,7 +82,7 @@ public final class DebugProbe {
     public let mockRuleEngine = MockRuleEngine.shared
 
     #if canImport(CocoaLumberjack)
-        private var ddLogger: DebugProbeDDLogger?
+        private var ddLogger: DDLogBridge?
     #endif
 
     // MARK: - Lifecycle
@@ -186,6 +186,18 @@ public final class DebugProbe {
         DebugLog.info("Stopped")
     }
 
+    /// 手动重试连接（用于连接失败后的手动恢复）
+    /// 适用于连接状态为 `.failed` 时
+    public func retryConnection() {
+        guard isStarted else {
+            DebugLog.debug("Not started, cannot retry")
+            return
+        }
+
+        DebugLog.info("Manual retry connection requested")
+        bridgeClient.retry()
+    }
+
     /// 使用新的配置重新连接
     /// 用于运行时配置变更后重新连接到新的 DebugHub
     public func reconnect(hubURL: URL, token: String) {
@@ -222,19 +234,39 @@ public final class DebugProbe {
 
     // MARK: - Network Capture Control
 
+    private var isNetworkCaptureEnabled: Bool = true
+
     public func setNetworkCaptureEnabled(_ enabled: Bool) {
+        isNetworkCaptureEnabled = enabled
+        DebugLog.info(.network, "HTTP capture \(enabled ? "enabled" : "disabled")")
+
         if enabled {
-            let mode = configuration?.networkCaptureMode ?? .automatic
-            let scope = configuration?.networkCaptureScope ?? .all
-            NetworkInstrumentation.shared.start(mode: mode, scope: scope)
+            // 仅当网络检测未运行时才启动
+            if !NetworkInstrumentation.shared.isEnabled {
+                let mode = configuration?.networkCaptureMode ?? .automatic
+                // 仅启动 HTTP 捕获（WebSocket 由单独开关控制）
+                NetworkInstrumentation.shared.start(mode: mode, scope: .http)
+            }
         } else {
-            NetworkInstrumentation.shared.stop()
+            // 如果 WebSocket 也关闭了，才完全停止
+            if !isWebSocketCaptureEnabled {
+                NetworkInstrumentation.shared.stop()
+            }
         }
+    }
+
+    public func isNetworkCaptureActive() -> Bool {
+        isNetworkCaptureEnabled
     }
 
     // MARK: - Log Capture Control
 
+    private var isLogCaptureEnabled: Bool = true
+
     public func setLogCaptureEnabled(_ enabled: Bool) {
+        isLogCaptureEnabled = enabled
+        DebugLog.info(.bridge, "Log capture \(enabled ? "enabled" : "disabled")")
+
         if enabled {
             startLogCapture()
         } else {
@@ -242,10 +274,14 @@ public final class DebugProbe {
         }
     }
 
+    public func isLogCaptureActive() -> Bool {
+        isLogCaptureEnabled
+    }
+
     private func startLogCapture() {
         #if canImport(CocoaLumberjack)
             if ddLogger == nil {
-                ddLogger = DebugProbeDDLogger()
+                ddLogger = DDLogBridge()
                 DDLog.add(ddLogger!)
             }
         #endif
@@ -270,7 +306,7 @@ public final class DebugProbe {
     }
 
     public func isWebSocketCaptureActive() -> Bool {
-        return isWebSocketCaptureEnabled
+        isWebSocketCaptureEnabled
     }
 
     // MARK: - Database Inspector Control
@@ -283,7 +319,7 @@ public final class DebugProbe {
     }
 
     public func isDatabaseInspectorActive() -> Bool {
-        return isDatabaseInspectorEnabled
+        isDatabaseInspectorEnabled
     }
 
     // MARK: - WebSocket Debug Hooks

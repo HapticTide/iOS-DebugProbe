@@ -137,9 +137,91 @@ public final class DebugProbeSettings {
         URL(string: "ws://\(hubHost):\(hubPort)/debug-bridge")!
     }
 
-    /// 配置摘要（用于显示）
+    /// 配置摘要（用于显示，格式为 host:port）
     public var summary: String {
         "\(hubHost):\(hubPort)"
+    }
+
+    /// 连接状态详情（用于 BackdoorController 显示）
+    /// 返回状态文本、状态颜色和地址信息
+    public struct ConnectionStatusDetail {
+        public let statusText: String
+        public let isGreen: Bool
+        public let isOrange: Bool
+        public let isRed: Bool
+        public let isGray: Bool
+        public let address: String
+    }
+
+    /// 获取连接状态详情
+    public var connectionStatusDetail: ConnectionStatusDetail {
+        let address = "\(hubHost):\(hubPort)"
+
+        if !isEnabled {
+            return ConnectionStatusDetail(
+                statusText: "未启用",
+                isGreen: false,
+                isOrange: false,
+                isRed: false,
+                isGray: true,
+                address: address
+            )
+        }
+
+        switch DebugProbe.shared.connectionState {
+        case .disconnected:
+            return ConnectionStatusDetail(
+                statusText: "已断开",
+                isGreen: false,
+                isOrange: false,
+                isRed: true,
+                isGray: false,
+                address: address
+            )
+        case .connecting:
+            return ConnectionStatusDetail(
+                statusText: "连接中...",
+                isGreen: false,
+                isOrange: true,
+                isRed: false,
+                isGray: false,
+                address: address
+            )
+        case .connected:
+            return ConnectionStatusDetail(
+                statusText: "握手中...",
+                isGreen: false,
+                isOrange: true,
+                isRed: false,
+                isGray: false,
+                address: address
+            )
+        case .registered:
+            return ConnectionStatusDetail(
+                statusText: "已连接",
+                isGreen: true,
+                isOrange: false,
+                isRed: false,
+                isGray: false,
+                address: address
+            )
+        case .failed:
+            return ConnectionStatusDetail(
+                statusText: "连接失败",
+                isGreen: false,
+                isOrange: false,
+                isRed: true,
+                isGray: false,
+                address: address
+            )
+        }
+    }
+
+    /// 连接状态摘要（用于 BackdoorController 显示）
+    /// 返回两行：第一行为连接状态，第二行为 host:port
+    public var statusSummary: String {
+        let detail = connectionStatusDetail
+        return "\(detail.statusText)\n\(detail.address)"
     }
 
     // MARK: - Configuration Changed Notification

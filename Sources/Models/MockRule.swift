@@ -25,6 +25,21 @@ public struct MockRule: Codable, Identifiable {
         public var wsPayloadContains: String?
         public var enabled: Bool
 
+        private enum CodingKeys: String, CodingKey {
+            case urlPattern, method, statusCode, headerContains, bodyContains, wsPayloadContains, enabled
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            urlPattern = try container.decodeIfPresent(String.self, forKey: .urlPattern)
+            method = try container.decodeIfPresent(String.self, forKey: .method)
+            statusCode = try container.decodeIfPresent(Int.self, forKey: .statusCode)
+            headerContains = try container.decodeIfPresent([String: String].self, forKey: .headerContains)
+            bodyContains = try container.decodeIfPresent(String.self, forKey: .bodyContains)
+            wsPayloadContains = try container.decodeIfPresent(String.self, forKey: .wsPayloadContains)
+            enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        }
+
         public init(
             urlPattern: String? = nil,
             method: String? = nil,

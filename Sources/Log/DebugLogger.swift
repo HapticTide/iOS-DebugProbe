@@ -1,4 +1,4 @@
-// AppLogger.swift
+// DebugLogger.swift
 // DebugPlatform
 //
 // Created by Sun on 2025/12/02.
@@ -8,8 +8,8 @@
 import Foundation
 import os.log
 
-/// os_log 包装器，同时写入系统日志和 DebugEventBus
-public struct AppLogger {
+/// DebugProbe 日志记录器，同时写入系统日志（os_log）和 DebugEventBus
+public struct DebugLogger {
     // MARK: - Properties
 
     public let subsystem: String

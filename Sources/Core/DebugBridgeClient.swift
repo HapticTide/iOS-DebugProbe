@@ -16,16 +16,18 @@ public final class DebugBridgeClient: NSObject {
         public let token: String
 
         /// 初始重连间隔（秒）
-        public var reconnectInterval: TimeInterval = 3.0
+        public var reconnectInterval: TimeInterval = 2.0
 
         /// 最大重连间隔（秒）- 指数退避上限
         public var maxReconnectInterval: TimeInterval = 30.0
 
-        /// 最大重连尝试次数（0 = 无限）
-        public var maxReconnectAttempts: Int = 0
+        /// 最大重连尝试次数（默认 10 次，0 = 无限重试）
+        /// 达到最大次数后状态变为 .failed，不再自动重连
+        public var maxReconnectAttempts: Int = 10
 
-        /// 心跳间隔（更频繁的心跳可以更快检测连接问题）
-        public var heartbeatInterval: TimeInterval = 15.0
+        /// 心跳间隔（秒）- 用于检测连接状态
+        /// 配合 ping/pong 机制可以更快检测到连接断开
+        public var heartbeatInterval: TimeInterval = 10.0
 
         public var batchSize: Int = 100
         public var flushInterval: TimeInterval = 1.0
@@ -47,11 +49,23 @@ public final class DebugBridgeClient: NSObject {
 
     // MARK: - State
 
-    public enum ConnectionState {
+    public enum ConnectionState: CustomStringConvertible {
         case disconnected
         case connecting
         case connected
         case registered
+        /// 连接失败（达到最大重试次数后）
+        case failed
+
+        public var description: String {
+            switch self {
+            case .disconnected: "disconnected"
+            case .connecting: "connecting"
+            case .connected: "connected"
+            case .registered: "registered"
+            case .failed: "failed"
+            }
+        }
     }
 
     public private(set) var state: ConnectionState = .disconnected
@@ -89,6 +103,9 @@ public final class DebugBridgeClient: NSObject {
     private var isReconnecting = false
     private var isFlushing = false
 
+    /// 是否已发送注册请求（防止重复发送）
+    private var hasRegistered = false
+
     // MARK: - Lifecycle
 
     override public init() {
@@ -118,11 +135,43 @@ public final class DebugBridgeClient: NSObject {
         }
     }
 
+    /// 手动重试连接（用于连接失败后的手动恢复）
+    /// 会重置重连计数器，重新开始连接尝试
+    public func retry() {
+        guard configuration != nil else {
+            DebugLog.error(.bridge, "Cannot retry: no configuration available")
+            return
+        }
+
+        DebugLog.info(.bridge, "Manual retry requested")
+
+        workQueue.async { [weak self] in
+            guard let self else { return }
+
+            // 重置状态
+            resetReconnectState()
+            isManualDisconnect = false
+
+            // 确保先断开
+            internalDisconnect()
+
+            // 重新连接
+            internalConnect()
+        }
+    }
+
     private func internalConnect() {
-        guard let configuration, state == .disconnected else { return }
+        guard let configuration else { return }
+
+        // 防止重复连接
+        guard state == .disconnected || state == .failed else {
+            DebugLog.debug(.bridge, "Already connecting/connected, ignoring connect request (state=\(state))")
+            return
+        }
 
         updateState(.connecting)
         isManualDisconnect = false
+        hasRegistered = false // 重置注册标记
 
         // 初始化持久化队列
         if configuration.enablePersistence {
@@ -155,6 +204,7 @@ public final class DebugBridgeClient: NSObject {
         urlSession?.invalidateAndCancel()
         urlSession = nil
         sessionId = nil
+        hasRegistered = false // 重置注册标记
 
         updateState(.disconnected)
     }
@@ -218,21 +268,21 @@ public final class DebugBridgeClient: NSObject {
             DispatchQueue.main.async { [weak self] in
                 self?.onMockRulesReceived?(rules)
             }
-            
+
         case let .updateBreakpointRules(rules):
             DebugLog.info(.bridge, "Received \(rules.count) breakpoint rules")
             // 更新断点引擎规则
             BreakpointEngine.shared.updateRules(rules)
-            
+
         case let .updateChaosRules(rules):
             DebugLog.info(.bridge, "Received \(rules.count) chaos rules")
             // 更新故障注入引擎规则
             ChaosEngine.shared.updateRules(rules)
-            
+
         case let .replayRequest(payload):
             DebugLog.info(.bridge, "Received replay request for \(payload.url)")
             executeReplayRequest(payload)
-            
+
         case let .breakpointResume(payload):
             DebugLog.info(.bridge, "Received breakpoint resume for \(payload.requestId)")
             // 恢复断点
@@ -242,7 +292,7 @@ public final class DebugBridgeClient: NSObject {
                     action: mapBreakpointAction(payload)
                 )
             }
-            
+
         case let .dbCommand(command):
             DebugLog.info(.bridge, "Received DB command: \(command.kind.rawValue)")
             handleDBCommand(command)
@@ -256,45 +306,45 @@ public final class DebugBridgeClient: NSObject {
             break
         }
     }
-    
+
     /// 执行请求重放
     private func executeReplayRequest(_ payload: ReplayRequestPayload) {
         guard let url = URL(string: payload.url) else {
             DebugLog.error(.bridge, "Invalid URL for replay: \(payload.url)")
             return
         }
-        
+
         var request = URLRequest(url: url)
         request.httpMethod = payload.method
-        
+
         // 设置请求头
         for (key, value) in payload.headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
+
         // 设置请求体
         request.httpBody = payload.bodyData
-        
+
         // 使用非监控的 session 执行请求，避免重放请求也被记录
         let session = URLSession(configuration: .ephemeral)
-        
+
         DebugLog.info(.bridge, "Executing replay request: \(payload.method) \(payload.url)")
-        
-        session.dataTask(with: request) { data, response, error in
-            if let error = error {
+
+        session.dataTask(with: request) { _, response, error in
+            if let error {
                 DebugLog.error(.bridge, "Replay request failed: \(error.localizedDescription)")
                 return
             }
-            
+
             if let httpResponse = response as? HTTPURLResponse {
                 DebugLog.info(.bridge, "Replay request completed: \(httpResponse.statusCode)")
             }
-            
+
             // 可选：发送重放结果回服务端
             // self?.sendReplayResult(id: payload.id, response: response, data: data, error: error)
         }.resume()
     }
-    
+
     /// 将 BreakpointResumePayload 转换为 BreakpointAction
     private func mapBreakpointAction(_ payload: BreakpointResumePayload) -> BreakpointAction {
         switch payload.action.lowercased() {
@@ -338,9 +388,9 @@ public final class DebugBridgeClient: NSObject {
             return .resume
         }
     }
-    
+
     // MARK: - DB Inspector Commands
-    
+
     /// 处理数据库检查命令
     private func handleDBCommand(_ command: DBCommand) {
         Task {
@@ -348,18 +398,18 @@ public final class DebugBridgeClient: NSObject {
             send(.dbResponse(response))
         }
     }
-    
+
     /// 执行数据库命令并返回响应
     private func executeDBCommand(_ command: DBCommand) async -> DBResponse {
         let inspector = SQLiteInspector.shared
-        
+
         do {
             switch command.kind {
             case .listDatabases:
                 let databases = try await inspector.listDatabases()
                 let payload = DBListDatabasesResponse(databases: databases)
                 return try DBResponse.success(requestId: command.requestId, data: payload)
-                
+
             case .listTables:
                 guard let dbId = command.dbId else {
                     return DBResponse.failure(requestId: command.requestId, error: .invalidQuery("dbId is required"))
@@ -367,18 +417,24 @@ public final class DebugBridgeClient: NSObject {
                 let tables = try await inspector.listTables(dbId: dbId)
                 let payload = DBListTablesResponse(dbId: dbId, tables: tables)
                 return try DBResponse.success(requestId: command.requestId, data: payload)
-                
+
             case .describeTable:
                 guard let dbId = command.dbId, let table = command.table else {
-                    return DBResponse.failure(requestId: command.requestId, error: .invalidQuery("dbId and table are required"))
+                    return DBResponse.failure(
+                        requestId: command.requestId,
+                        error: .invalidQuery("dbId and table are required")
+                    )
                 }
                 let columns = try await inspector.describeTable(dbId: dbId, table: table)
                 let payload = DBDescribeTableResponse(dbId: dbId, table: table, columns: columns)
                 return try DBResponse.success(requestId: command.requestId, data: payload)
-                
+
             case .fetchTablePage:
                 guard let dbId = command.dbId, let table = command.table else {
-                    return DBResponse.failure(requestId: command.requestId, error: .invalidQuery("dbId and table are required"))
+                    return DBResponse.failure(
+                        requestId: command.requestId,
+                        error: .invalidQuery("dbId and table are required")
+                    )
                 }
                 let result = try await inspector.fetchTablePage(
                     dbId: dbId,
@@ -389,10 +445,13 @@ public final class DebugBridgeClient: NSObject {
                     ascending: command.ascending ?? true
                 )
                 return try DBResponse.success(requestId: command.requestId, data: result)
-                
+
             case .executeQuery:
                 guard let dbId = command.dbId, let query = command.query else {
-                    return DBResponse.failure(requestId: command.requestId, error: .invalidQuery("dbId and query are required"))
+                    return DBResponse.failure(
+                        requestId: command.requestId,
+                        error: .invalidQuery("dbId and query are required")
+                    )
                 }
                 let result = try await inspector.executeQuery(dbId: dbId, query: query)
                 return try DBResponse.success(requestId: command.requestId, data: result)
@@ -445,9 +504,16 @@ public final class DebugBridgeClient: NSObject {
         }
     }
 
-    /// 发送设备注册消息
+    /// 发送设备注册请求
     private func sendRegister() {
         guard let configuration else { return }
+
+        // 防止重复发送注册请求
+        guard !hasRegistered else {
+            DebugLog.debug(.bridge, "Already registered, ignoring duplicate register request")
+            return
+        }
+        hasRegistered = true
 
         #if canImport(UIKit)
             let deviceInfo = DeviceInfo.current()
@@ -455,6 +521,7 @@ public final class DebugBridgeClient: NSObject {
             let deviceInfo = DeviceInfo(
                 deviceId: UUID().uuidString,
                 deviceName: Host.current().localizedName ?? "Unknown",
+                deviceModel: DeviceInfo.macDeviceModel(),
                 systemName: "macOS",
                 systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
                 appName: "Debug Client",
@@ -463,6 +530,7 @@ public final class DebugBridgeClient: NSObject {
             )
         #endif
 
+        DebugLog.debug(.bridge, "Sending register request for device: \(deviceInfo.deviceId)")
         send(.register(deviceInfo, token: configuration.token))
     }
 
@@ -483,7 +551,7 @@ public final class DebugBridgeClient: NSObject {
         if state == .registered {
             isFlushing = true
             DebugLog.debug(.bridge, "Flushing \(events.count) events to hub")
-            
+
             send(.events(events)) { [weak self] error in
                 guard let self else { return }
                 if error == nil {
@@ -491,8 +559,8 @@ public final class DebugBridgeClient: NSObject {
                 } else {
                     DebugLog.error(.bridge, "Failed to flush events, keeping in queue")
                 }
-                
-                self.workQueue.async {
+
+                workQueue.async {
                     self.isFlushing = false
                 }
             }
@@ -582,7 +650,9 @@ public final class DebugBridgeClient: NSObject {
                 withTimeInterval: configuration.heartbeatInterval,
                 repeats: true
             ) { [weak self] _ in
-                self?.sendHeartbeat()
+                self?.workQueue.async {
+                    self?.sendHeartbeatWithHealthCheck()
+                }
             }
 
             // 事件刷新定时器
@@ -592,6 +662,29 @@ public final class DebugBridgeClient: NSObject {
                         self?.flushEvents()
                     }
                 }
+        }
+    }
+
+    /// 发送心跳并检测连接健康状态
+    private func sendHeartbeatWithHealthCheck() {
+        guard state == .registered else { return }
+
+        // 使用 WebSocket 的 ping 检测连接是否真正活跃
+        webSocketTask?.sendPing { [weak self] error in
+            guard let self else { return }
+
+            if let error {
+                DebugLog.error(.bridge, "WebSocket ping failed: \(error.localizedDescription)")
+                // ping 失败，说明连接已断开，触发重连
+                workQueue.async {
+                    if !self.isManualDisconnect {
+                        self.scheduleReconnect()
+                    }
+                }
+            } else {
+                // ping 成功，发送业务心跳
+                sendHeartbeat()
+            }
         }
     }
 
@@ -610,11 +703,21 @@ public final class DebugBridgeClient: NSObject {
     }
 
     private func scheduleReconnect() {
-        guard let configuration, !isManualDisconnect, !isReconnecting else { return }
+        guard let configuration, !isManualDisconnect else {
+            DebugLog.debug(.bridge, "Reconnect skipped: manual disconnect or no configuration")
+            return
+        }
+
+        guard !isReconnecting else {
+            DebugLog.debug(.bridge, "Reconnect already in progress")
+            return
+        }
 
         // 检查是否超过最大重试次数
         if configuration.maxReconnectAttempts > 0, reconnectAttempts >= configuration.maxReconnectAttempts {
             DebugLog.error(.bridge, "Max reconnect attempts (\(configuration.maxReconnectAttempts)) reached, giving up")
+            updateState(.failed)
+            isReconnecting = false
             return
         }
 
@@ -631,7 +734,10 @@ public final class DebugBridgeClient: NSObject {
             currentReconnectInterval = configuration.reconnectInterval
         }
 
-        DebugLog.debug(.bridge, "Scheduling reconnect in \(currentReconnectInterval)s (attempt \(reconnectAttempts))")
+        DebugLog.info(
+            .bridge,
+            "Scheduling reconnect in \(currentReconnectInterval)s (attempt \(reconnectAttempts)/\(configuration.maxReconnectAttempts == 0 ? "∞" : "\(configuration.maxReconnectAttempts)"))"
+        )
 
         internalDisconnect()
 
@@ -640,9 +746,11 @@ public final class DebugBridgeClient: NSObject {
                 withTimeInterval: self?.currentReconnectInterval ?? 5.0,
                 repeats: false
             ) { [weak self] _ in
-                self?.isReconnecting = false
-                self?.workQueue.async {
-                    self?.internalConnect()
+                guard let self else { return }
+                DebugLog.debug(.bridge, "Reconnect timer fired, attempting connection...")
+                isReconnecting = false
+                workQueue.async {
+                    self.internalConnect()
                 }
             }
         }
@@ -673,6 +781,7 @@ extension DebugBridgeClient: URLSessionWebSocketDelegate {
         webSocketTask _: URLSessionWebSocketTask,
         didOpenWithProtocol _: String?
     ) {
+        DebugLog.info(.bridge, "WebSocket connection opened")
         updateState(.connected)
         sendRegister()
     }
@@ -680,9 +789,12 @@ extension DebugBridgeClient: URLSessionWebSocketDelegate {
     public func urlSession(
         _: URLSession,
         webSocketTask _: URLSessionWebSocketTask,
-        didCloseWith _: URLSessionWebSocketTask.CloseCode,
-        reason _: Data?
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
     ) {
+        let reasonString = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "unknown"
+        DebugLog.info(.bridge, "WebSocket closed with code: \(closeCode.rawValue), reason: \(reasonString)")
+
         if !isManualDisconnect {
             scheduleReconnect()
         }

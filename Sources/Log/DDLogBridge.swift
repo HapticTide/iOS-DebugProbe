@@ -1,4 +1,4 @@
-// DebugProbeDDLogger.swift
+// DDLogBridge.swift
 // DebugPlatform
 //
 // Created by Sun on 2025/12/02.
@@ -9,8 +9,8 @@
     import CocoaLumberjack
     import Foundation
 
-    /// CocoaLumberjack 自定义 Logger，用于将日志转发到 DebugEventBus
-    public final class DebugProbeDDLogger: DDAbstractLogger {
+    /// CocoaLumberjack 日志桥接器，将 DDLog 日志转发到 DebugEventBus
+    public final class DDLogBridge: DDAbstractLogger {
         // MARK: - Properties
 
         private var _logFormatter: DDLogFormatter?
@@ -30,7 +30,8 @@
 
         override public func log(message logMessage: DDLogMessage) {
             // 将 DDLogMessage 映射为 LogEvent
-            let loggerName = (logMessage.representedObject as? String) ?? String(describing: logMessage.representedObject)
+            let loggerName = (logMessage.representedObject as? String) ??
+                String(describing: logMessage.representedObject)
 
             let event = LogEvent(
                 id: UUID().uuidString,
