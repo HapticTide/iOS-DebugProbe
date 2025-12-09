@@ -106,7 +106,7 @@ public final class BreakpointEngine {
         defer { rulesLock.unlock() }
         return rules
     }
-    
+
     /// 检查是否有匹配的响应阶段断点规则
     /// 用于预先判断是否需要拦截响应
     public func hasResponseBreakpoint(for request: URLRequest) -> Bool {
@@ -227,7 +227,7 @@ public final class BreakpointEngine {
             await resumeBreakpoint(requestId: resume.requestId, action: resume.action)
         }
     }
-    
+
     /// 恢复断点（直接调用）
     public func resumeBreakpoint(requestId: String, action: BreakpointAction) async {
         let resumed = await pendingManager.resume(requestId: requestId, action: action)

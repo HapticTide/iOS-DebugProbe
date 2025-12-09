@@ -225,6 +225,7 @@ public struct WSEvent: Codable {
 
         public let id: String
         public let sessionId: String
+        public let sessionUrl: String? // 会话 URL，用于在 session 被删除后恢复
         public let direction: Direction
         public let opcode: Opcode
         public let payload: Data
@@ -236,6 +237,7 @@ public struct WSEvent: Codable {
         public init(
             id: String = UUID().uuidString,
             sessionId: String,
+            sessionUrl: String? = nil,
             direction: Direction,
             opcode: Opcode,
             payload: Data,
@@ -246,6 +248,7 @@ public struct WSEvent: Codable {
         ) {
             self.id = id
             self.sessionId = sessionId
+            self.sessionUrl = sessionUrl
             self.direction = direction
             self.opcode = opcode
             self.payload = payload

@@ -36,22 +36,22 @@ public enum BridgeMessage: Codable {
 
     /// 请求导出数据
     case requestExport(timeFrom: Date, timeTo: Date, types: [String])
-    
+
     /// 重放请求
     case replayRequest(ReplayRequestPayload)
-    
+
     /// 更新断点规则
     case updateBreakpointRules([BreakpointRule])
-    
+
     /// 断点恢复
     case breakpointResume(BreakpointResumePayload)
-    
+
     /// 更新故障注入规则
     case updateChaosRules([ChaosRule])
-    
+
     /// 数据库命令
     case dbCommand(DBCommand)
-    
+
     /// 数据库响应
     case dbResponse(DBResponse)
 
@@ -104,7 +104,12 @@ public enum BridgeMessage: Codable {
             self = .registered(sessionId: payload.sessionId)
         case .toggleCapture:
             let payload = try container.decode(ToggleCapturePayload.self, forKey: .payload)
-            self = .toggleCapture(network: payload.network, log: payload.log, websocket: payload.websocket, database: payload.database)
+            self = .toggleCapture(
+                network: payload.network,
+                log: payload.log,
+                websocket: payload.websocket,
+                database: payload.database
+            )
         case .updateMockRules:
             let rules = try container.decode([MockRule].self, forKey: .payload)
             self = .updateMockRules(rules)
@@ -155,7 +160,10 @@ public enum BridgeMessage: Codable {
             try container.encode(RegisteredPayload(sessionId: sessionId), forKey: .payload)
         case let .toggleCapture(network, log, websocket, database):
             try container.encode(MessageType.toggleCapture, forKey: .type)
-            try container.encode(ToggleCapturePayload(network: network, log: log, websocket: websocket, database: database), forKey: .payload)
+            try container.encode(
+                ToggleCapturePayload(network: network, log: log, websocket: websocket, database: database),
+                forKey: .payload
+            )
         case let .updateMockRules(rules):
             try container.encode(MessageType.updateMockRules, forKey: .type)
             try container.encode(rules, forKey: .payload)
@@ -222,8 +230,8 @@ public struct ReplayRequestPayload: Codable {
     public let method: String
     public let url: String
     public let headers: [String: String]
-    public let body: String?  // base64 encoded
-    
+    public let body: String? // base64 encoded
+
     public init(id: String, method: String, url: String, headers: [String: String], body: String?) {
         self.id = id
         self.method = method
@@ -231,10 +239,10 @@ public struct ReplayRequestPayload: Codable {
         self.headers = headers
         self.body = body
     }
-    
+
     /// 解码 body 为 Data
     public var bodyData: Data? {
-        guard let body = body else { return nil }
+        guard let body else { return nil }
         return Data(base64Encoded: body)
     }
 }
@@ -243,36 +251,42 @@ public struct ReplayRequestPayload: Codable {
 public struct BreakpointResumePayload: Codable {
     public let breakpointId: String
     public let requestId: String
-    public let action: String  // "continue", "resume", "abort", "modify", "mockResponse"
+    public let action: String // "continue", "resume", "abort", "modify", "mockResponse"
     public let modifiedRequest: ModifiedRequest?
     public let modifiedResponse: ModifiedResponse?
-    
+
     public struct ModifiedRequest: Codable {
         public let method: String?
         public let url: String?
         public let headers: [String: String]?
-        public let body: String?  // base64 encoded
-        
+        public let body: String? // base64 encoded
+
         /// 解码 body 为 Data
         public var bodyData: Data? {
-            guard let body = body else { return nil }
+            guard let body else { return nil }
             return Data(base64Encoded: body)
         }
     }
-    
+
     public struct ModifiedResponse: Codable {
         public let statusCode: Int?
         public let headers: [String: String]?
-        public let body: String?  // base64 encoded
-        
+        public let body: String? // base64 encoded
+
         /// 解码 body 为 Data
         public var bodyData: Data? {
-            guard let body = body else { return nil }
+            guard let body else { return nil }
             return Data(base64Encoded: body)
         }
     }
-    
-    public init(breakpointId: String, requestId: String, action: String, modifiedRequest: ModifiedRequest? = nil, modifiedResponse: ModifiedResponse? = nil) {
+
+    public init(
+        breakpointId: String,
+        requestId: String,
+        action: String,
+        modifiedRequest: ModifiedRequest? = nil,
+        modifiedResponse: ModifiedResponse? = nil
+    ) {
         self.breakpointId = breakpointId
         self.requestId = requestId
         self.action = action

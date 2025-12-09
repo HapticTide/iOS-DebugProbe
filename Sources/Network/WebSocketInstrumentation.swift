@@ -155,6 +155,7 @@ public final class WebSocketInstrumentation {
     ) {
         let frame = WSEvent.Frame(
             sessionId: sessionId,
+            sessionUrl: sessionURL,
             direction: direction,
             opcode: opcode,
             payload: payload,

@@ -149,6 +149,7 @@ public final class MockRuleEngine {
         for rule in currentRules {
             let tempFrame = WSEvent.Frame(
                 sessionId: sessionId,
+                sessionUrl: sessionURL,
                 direction: .send,
                 opcode: .text,
                 payload: payload
@@ -185,6 +186,7 @@ public final class MockRuleEngine {
         for rule in currentRules {
             let tempFrame = WSEvent.Frame(
                 sessionId: sessionId,
+                sessionUrl: sessionURL,
                 direction: .receive,
                 opcode: .text,
                 payload: payload

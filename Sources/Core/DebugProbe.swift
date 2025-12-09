@@ -329,6 +329,10 @@ public final class DebugProbe {
     public typealias WSSessionClosedHook = (_ sessionId: String, _ closeCode: Int?, _ reason: String?) -> Void
     public typealias WSMessageHook = (_ sessionId: String, _ data: Data) -> Void
 
+    /// 内部维护的 sessionId -> URL 映射，用于在帧事件中恢复 URL
+    private var wsSessionURLCache: [String: String] = [:]
+    private let wsSessionURLCacheLock = NSLock()
+
     /// 获取用于注入到宿主 App 的 WebSocket 调试钩子
     ///
     /// 使用方式（在 AppDelegate/SceneDelegate 中）：
@@ -350,8 +354,14 @@ public final class DebugProbe {
         onMessageSent: WSMessageHook,
         onMessageReceived: WSMessageHook
     ) {
-        let onSessionCreated: WSSessionCreatedHook = { sessionId, url, headers in
+        let onSessionCreated: WSSessionCreatedHook = { [weak self] sessionId, url, headers in
             DebugLog.info(.webSocket, "Hook: Session created - \(url)")
+
+            // 缓存 sessionId -> URL 映射
+            self?.wsSessionURLCacheLock.lock()
+            self?.wsSessionURLCache[sessionId] = url
+            self?.wsSessionURLCacheLock.unlock()
+
             let session = WSEvent.Session(
                 id: sessionId,
                 url: url,
@@ -362,9 +372,15 @@ public final class DebugProbe {
             DebugEventBus.shared.enqueue(.webSocket(event))
         }
 
-        let onSessionClosed: WSSessionClosedHook = { sessionId, closeCode, reason in
+        let onSessionClosed: WSSessionClosedHook = { [weak self] sessionId, closeCode, reason in
             DebugLog.info(.webSocket, "Hook: Session closed - \(sessionId), code: \(closeCode ?? -1)")
-            var session = WSEvent.Session(id: sessionId, url: "", requestHeaders: [:], subprotocols: [])
+
+            // 获取缓存的 URL（关闭时不删除缓存，因为后续可能还有帧事件）
+            self?.wsSessionURLCacheLock.lock()
+            let cachedURL = self?.wsSessionURLCache[sessionId] ?? ""
+            self?.wsSessionURLCacheLock.unlock()
+
+            var session = WSEvent.Session(id: sessionId, url: cachedURL, requestHeaders: [:], subprotocols: [])
             session.disconnectTime = Date()
             session.closeCode = closeCode
             session.closeReason = reason
@@ -372,10 +388,17 @@ public final class DebugProbe {
             DebugEventBus.shared.enqueue(.webSocket(event))
         }
 
-        let onMessageSent: WSMessageHook = { sessionId, data in
+        let onMessageSent: WSMessageHook = { [weak self] sessionId, data in
             DebugLog.debug(.webSocket, "Hook: Message sent - \(sessionId), size: \(data.count)")
+
+            // 从缓存获取 URL
+            self?.wsSessionURLCacheLock.lock()
+            let cachedURL = self?.wsSessionURLCache[sessionId]
+            self?.wsSessionURLCacheLock.unlock()
+
             let frame = WSEvent.Frame(
                 sessionId: sessionId,
+                sessionUrl: cachedURL,
                 direction: .send,
                 opcode: .binary,
                 payload: data,
@@ -386,10 +409,17 @@ public final class DebugProbe {
             DebugEventBus.shared.enqueue(.webSocket(event))
         }
 
-        let onMessageReceived: WSMessageHook = { sessionId, data in
+        let onMessageReceived: WSMessageHook = { [weak self] sessionId, data in
             DebugLog.debug(.webSocket, "Hook: Message received - \(sessionId), size: \(data.count)")
+
+            // 从缓存获取 URL
+            self?.wsSessionURLCacheLock.lock()
+            let cachedURL = self?.wsSessionURLCache[sessionId]
+            self?.wsSessionURLCacheLock.unlock()
+
             let frame = WSEvent.Frame(
                 sessionId: sessionId,
+                sessionUrl: cachedURL,
                 direction: .receive,
                 opcode: .binary,
                 payload: data,

@@ -271,6 +271,7 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
     ) {
         let frame = WSEvent.Frame(
             sessionId: sessionId,
+            sessionUrl: url.absoluteString, // 直接使用 url 属性，确保始终有值
             direction: direction,
             opcode: opcode,
             payload: payload,

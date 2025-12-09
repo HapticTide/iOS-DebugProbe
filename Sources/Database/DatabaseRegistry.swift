@@ -9,26 +9,25 @@ import Foundation
 
 /// 数据库注册表 - 管理多个 SQLite 数据库
 public final class DatabaseRegistry: @unchecked Sendable {
-    
     /// 单例
     public static let shared = DatabaseRegistry()
-    
+
     /// 已注册的数据库
     private var databases: [String: RegisteredDatabase] = [:]
-    
+
     /// 线程安全锁
     private let lock = NSLock()
-    
+
     /// 注册的数据库结构
     private struct RegisteredDatabase {
         let descriptor: DatabaseDescriptor
         let url: URL
     }
-    
+
     private init() {}
-    
+
     // MARK: - Public API
-    
+
     /// 注册数据库
     /// - Parameters:
     ///   - descriptor: 数据库描述符
@@ -36,11 +35,11 @@ public final class DatabaseRegistry: @unchecked Sendable {
     public func register(descriptor: DatabaseDescriptor, url: URL) {
         lock.lock()
         defer { lock.unlock() }
-        
+
         databases[descriptor.id] = RegisteredDatabase(descriptor: descriptor, url: url)
         DebugLog.info("[DatabaseRegistry] Registered database: \(descriptor.id) at \(url.path)")
     }
-    
+
     /// 注册数据库（自动解析 URL）
     /// - Parameter descriptor: 数据库描述符
     /// - Returns: 是否注册成功
@@ -53,64 +52,64 @@ public final class DatabaseRegistry: @unchecked Sendable {
         register(descriptor: descriptor, url: url)
         return true
     }
-    
+
     /// 注销数据库
     /// - Parameter id: 数据库 ID
     public func unregister(id: String) {
         lock.lock()
         defer { lock.unlock() }
-        
+
         databases.removeValue(forKey: id)
         DebugLog.info("[DatabaseRegistry] Unregistered database: \(id)")
     }
-    
+
     /// 获取所有在 Inspector 中可见的数据库描述符
     /// - Returns: 数据库描述符列表
     public func allDescriptors() -> [DatabaseDescriptor] {
         lock.lock()
         defer { lock.unlock() }
-        
+
         return databases.values
             .map(\.descriptor)
             .filter(\.visibleInInspector)
             .sorted { $0.id < $1.id }
     }
-    
+
     /// 获取指定数据库的 URL
     /// - Parameter id: 数据库 ID
     /// - Returns: 数据库文件 URL
     public func url(for id: String) -> URL? {
         lock.lock()
         defer { lock.unlock() }
-        
+
         return databases[id]?.url
     }
-    
+
     /// 获取指定数据库的描述符
     /// - Parameter id: 数据库 ID
     /// - Returns: 数据库描述符
     public func descriptor(for id: String) -> DatabaseDescriptor? {
         lock.lock()
         defer { lock.unlock() }
-        
+
         return databases[id]?.descriptor
     }
-    
+
     /// 检查数据库是否已注册
     /// - Parameter id: 数据库 ID
     /// - Returns: 是否已注册
     public func isRegistered(_ id: String) -> Bool {
         lock.lock()
         defer { lock.unlock() }
-        
+
         return databases[id] != nil
     }
-    
+
     /// 清空所有注册
     public func clear() {
         lock.lock()
         defer { lock.unlock() }
-        
+
         databases.removeAll()
         DebugLog.info("[DatabaseRegistry] Cleared all registrations")
     }
@@ -119,7 +118,6 @@ public final class DatabaseRegistry: @unchecked Sendable {
 // MARK: - Simple Registration API (宿主 App 推荐使用)
 
 public extension DatabaseRegistry {
-    
     /// 快速注册数据库
     /// - Parameters:
     ///   - id: 唯一标识符
@@ -149,7 +147,6 @@ public extension DatabaseRegistry {
 // MARK: - Batch Registration (批量注册)
 
 public extension DatabaseRegistry {
-    
     /// 数据库配置
     struct DatabaseConfig {
         public let id: String
@@ -157,7 +154,7 @@ public extension DatabaseRegistry {
         public let filename: String
         public let kind: DatabaseDescriptor.Kind
         public let isSensitive: Bool
-        
+
         public init(
             id: String,
             name: String,
@@ -172,7 +169,7 @@ public extension DatabaseRegistry {
             self.isSensitive = isSensitive
         }
     }
-    
+
     /// 批量注册目录中的多个数据库
     /// - Parameters:
     ///   - directoryURL: 目录 URL
@@ -188,10 +185,10 @@ public extension DatabaseRegistry {
                 isSensitive: config.isSensitive
             )
         }
-        
+
         DebugLog.info("[DatabaseRegistry] Registered \(configs.count) databases from: \(directoryURL.path)")
     }
-    
+
     /// 自动发现并注册目录中的所有 SQLite 数据库
     /// - Parameters:
     ///   - directoryURL: 要扫描的目录 URL
@@ -202,44 +199,44 @@ public extension DatabaseRegistry {
         var discovered: [String] = []
         let fileManager = FileManager.default
         let basePath = directoryURL.path
-        
+
         // 递归扫描所有目录中的 .sqlite, .db, .sqlite3 文件
         let enumerator = fileManager.enumerator(
             at: directoryURL,
             includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
             options: [.skipsHiddenFiles]
         )
-        
+
         while let fileURL = enumerator?.nextObject() as? URL {
             // 计算当前深度
             let relativePath = fileURL.path.replacingOccurrences(of: basePath, with: "")
-            let depth = relativePath.components(separatedBy: "/").filter { !$0.isEmpty }.count
-            
+            let depth = relativePath.components(separatedBy: "/").count(where: { !$0.isEmpty })
+
             // 如果超过最大深度，跳过该目录
             if depth > maxDepth {
                 enumerator?.skipDescendants()
                 continue
             }
-            
+
             let ext = fileURL.pathExtension.lowercased()
             guard ext == "sqlite" || ext == "db" || ext == "sqlite3" else { continue }
-            
+
             // 跳过 WAL 和 SHM 文件
             let filename = fileURL.lastPathComponent
             if filename.hasSuffix("-wal") || filename.hasSuffix("-shm") { continue }
-            
+
             // 生成唯一的 id（使用相对路径，替换 / 为 _）
             let id = relativePath
                 .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                 .replacingOccurrences(of: "/", with: "_")
                 .replacingOccurrences(of: "." + ext, with: "")
-            
+
             // 检查是否是敏感数据库
             let isSensitive = sensitivePatterns.contains { filename.lowercased().contains($0.lowercased()) }
-            
+
             // 推断数据库类型
             let kind = inferKind(from: filename)
-            
+
             register(
                 id: id,
                 name: formatDisplayName(fileURL.deletingPathExtension().lastPathComponent),
@@ -249,11 +246,14 @@ public extension DatabaseRegistry {
             )
             discovered.append(id)
         }
-        
-        DebugLog.info("[DatabaseRegistry] Auto-discovered \(discovered.count) databases: \(discovered.joined(separator: ", "))")
+
+        DebugLog
+            .info(
+                "[DatabaseRegistry] Auto-discovered \(discovered.count) databases: \(discovered.joined(separator: ", "))"
+            )
         return discovered
     }
-    
+
     /// 根据文件名推断数据库类型
     private func inferKind(from filename: String) -> DatabaseDescriptor.Kind {
         let lowercased = filename.lowercased()
@@ -264,7 +264,7 @@ public extension DatabaseRegistry {
         }
         return "other"
     }
-    
+
     /// 格式化显示名称
     private func formatDisplayName(_ id: String) -> String {
         // 将 snake_case 或 camelCase 转为空格分隔的标题

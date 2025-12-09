@@ -28,8 +28,8 @@ public struct DBCommand: Codable, Sendable {
     public let pageSize: Int?
     public let orderBy: String?
     public let ascending: Bool?
-    public let query: String?  // SQL 查询语句
-    
+    public let query: String? // SQL 查询语句
+
     public init(
         requestId: String,
         kind: DBCommandKind,
@@ -61,25 +61,25 @@ public struct DBResponse: Codable, Sendable {
     public let success: Bool
     public let payload: Data?
     public let error: DBInspectorError?
-    
+
     public init(requestId: String, success: Bool, payload: Data? = nil, error: DBInspectorError? = nil) {
         self.requestId = requestId
         self.success = success
         self.payload = payload
         self.error = error
     }
-    
+
     /// 创建成功响应
-    public static func success<T: Encodable>(requestId: String, data: T) throws -> DBResponse {
+    public static func success(requestId: String, data: some Encodable) throws -> DBResponse {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         let payload = try encoder.encode(data)
         return DBResponse(requestId: requestId, success: true, payload: payload, error: nil)
     }
-    
+
     /// 创建错误响应
     public static func failure(requestId: String, error: DBInspectorError) -> DBResponse {
-        return DBResponse(requestId: requestId, success: false, payload: nil, error: error)
+        DBResponse(requestId: requestId, success: false, payload: nil, error: error)
     }
 }
 
@@ -88,7 +88,7 @@ public struct DBResponse: Codable, Sendable {
 /// 数据库列表响应
 public struct DBListDatabasesResponse: Codable, Sendable {
     public let databases: [DBInfo]
-    
+
     public init(databases: [DBInfo]) {
         self.databases = databases
     }
@@ -98,7 +98,7 @@ public struct DBListDatabasesResponse: Codable, Sendable {
 public struct DBListTablesResponse: Codable, Sendable {
     public let dbId: String
     public let tables: [DBTableInfo]
-    
+
     public init(dbId: String, tables: [DBTableInfo]) {
         self.dbId = dbId
         self.tables = tables
@@ -110,7 +110,7 @@ public struct DBDescribeTableResponse: Codable, Sendable {
     public let dbId: String
     public let table: String
     public let columns: [DBColumnInfo]
-    
+
     public init(dbId: String, table: String, columns: [DBColumnInfo]) {
         self.dbId = dbId
         self.table = table
@@ -126,7 +126,7 @@ public struct DBQueryResponse: Codable, Sendable {
     public let rows: [DBRow]
     public let rowCount: Int
     public let executionTimeMs: Double
-    
+
     public init(
         dbId: String,
         query: String,

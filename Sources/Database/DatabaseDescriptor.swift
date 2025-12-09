@@ -11,7 +11,7 @@ import Foundation
 public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
     /// 数据库类型（使用字符串以便扩展）
     public typealias Kind = String
-    
+
     /// 数据库位置
     public enum Location: Codable, Hashable, Sendable {
         case appSupport(relative: String)
@@ -19,73 +19,73 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         case caches(relative: String)
         case group(containerId: String, relative: String)
         case custom(description: String)
-        
+
         /// 获取完整 URL
         public func resolveURL() -> URL? {
             switch self {
-            case .appSupport(let relative):
-                return FileManager.default
+            case let .appSupport(relative):
+                FileManager.default
                     .urls(for: .applicationSupportDirectory, in: .userDomainMask)
                     .first?
                     .appendingPathComponent(relative)
-                
-            case .documents(let relative):
-                return FileManager.default
+
+            case let .documents(relative):
+                FileManager.default
                     .urls(for: .documentDirectory, in: .userDomainMask)
                     .first?
                     .appendingPathComponent(relative)
-                
-            case .caches(let relative):
-                return FileManager.default
+
+            case let .caches(relative):
+                FileManager.default
                     .urls(for: .cachesDirectory, in: .userDomainMask)
                     .first?
                     .appendingPathComponent(relative)
-                
-            case .group(let containerId, let relative):
-                return FileManager.default
+
+            case let .group(containerId, relative):
+                FileManager.default
                     .containerURL(forSecurityApplicationGroupIdentifier: containerId)?
                     .appendingPathComponent(relative)
-                
+
             case .custom:
-                return nil
+                nil
             }
         }
-        
+
         /// 位置描述
         public var description: String {
             switch self {
-            case .appSupport(let path):
-                return "Application Support/\(path)"
-            case .documents(let path):
-                return "Documents/\(path)"
-            case .caches(let path):
-                return "Caches/\(path)"
-            case .group(let container, let path):
-                return "AppGroup(\(container))/\(path)"
-            case .custom(let desc):
-                return desc
+            case let .appSupport(path):
+                "Application Support/\(path)"
+            case let .documents(path):
+                "Documents/\(path)"
+            case let .caches(path):
+                "Caches/\(path)"
+            case let .group(container, path):
+                "AppGroup(\(container))/\(path)"
+            case let .custom(desc):
+                desc
             }
         }
     }
-    
+
     /// 唯一标识符
     public let id: String
-    
+
     /// 显示名称
     public let name: String
-    
+
     /// 数据库类型
     public let kind: Kind
-    
+
     /// 数据库位置
     public let location: Location
-    
+
     /// 是否敏感数据（钱包、隐私等）
     public let isSensitive: Bool
-    
+
     /// 是否在 Inspector 中可见
     public let visibleInInspector: Bool
-    
+
     /// 初始化
     public init(
         id: String,
