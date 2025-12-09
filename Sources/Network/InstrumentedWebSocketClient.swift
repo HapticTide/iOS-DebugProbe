@@ -1,5 +1,5 @@
 // InstrumentedWebSocketClient.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
@@ -145,12 +145,12 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
     // MARK: - Internal Methods
 
     private func sendMessage(_ message: URLSessionWebSocketTask.Message, payload: Data, opcode: WSEvent.Frame.Opcode) {
-        // 过 Mock 规则引擎
-        let (modifiedPayload, isMocked, ruleId) = MockRuleEngine.shared.processWSOutgoingFrame(
+        // 通过 EventCallbacks 调用 MockPlugin 处理
+        let (modifiedPayload, isMocked, ruleId): (Data, Bool, String?) = EventCallbacks.mockWSOutgoingFrame?(
             payload,
-            sessionId: sessionId,
-            sessionURL: url.absoluteString
-        )
+            sessionId,
+            url.absoluteString
+        ) ?? (payload, false, nil)
 
         // 记录发送帧事件
         recordFrame(
@@ -208,12 +208,12 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
             return
         }
 
-        // 过 Mock 规则引擎
-        let (modifiedPayload, isMocked, ruleId) = MockRuleEngine.shared.processWSIncomingFrame(
+        // 通过 EventCallbacks 调用 MockPlugin 处理
+        let (modifiedPayload, isMocked, ruleId): (Data, Bool, String?) = EventCallbacks.mockWSIncomingFrame?(
             payload,
-            sessionId: sessionId,
-            sessionURL: url.absoluteString
-        )
+            sessionId,
+            url.absoluteString
+        ) ?? (payload, false, nil)
 
         // 记录接收帧事件
         recordFrame(
@@ -248,7 +248,7 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
     private func recordSessionCreated() {
         guard let session else { return }
         let event = WSEvent(kind: .sessionCreated(session))
-        DebugEventBus.shared.enqueue(.webSocket(event))
+        EventCallbacks.reportWebSocket(event)
     }
 
     private func recordSessionClosed(closeCode: Int?, reason: String?) {
@@ -259,7 +259,7 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
         self.session = session
 
         let event = WSEvent(kind: .sessionClosed(session))
-        DebugEventBus.shared.enqueue(.webSocket(event))
+        EventCallbacks.reportWebSocket(event)
     }
 
     private func recordFrame(
@@ -280,7 +280,7 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
         )
 
         let event = WSEvent(kind: .frame(frame))
-        DebugEventBus.shared.enqueue(.webSocket(event))
+        EventCallbacks.reportWebSocket(event)
     }
 }
 

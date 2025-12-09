@@ -1,5 +1,5 @@
 // DebugLogger.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
@@ -8,7 +8,7 @@
 import Foundation
 import os.log
 
-/// DebugProbe 日志记录器，同时写入系统日志（os_log）和 DebugEventBus
+/// DebugProbe 日志记录器，同时写入系统日志（os_log）和 EventCallbacks
 public struct DebugLogger {
     // MARK: - Properties
 
@@ -40,7 +40,7 @@ public struct DebugLogger {
         // 1. 写入 os_log
         os_log("%{public}@", log: osLog, type: mapLevelToOSLogType(level), message)
 
-        // 2. 同步发送到 DebugEventBus
+        // 2. 同步发送到 EventCallbacks
         let event = LogEvent(
             id: UUID().uuidString,
             source: .osLog,
@@ -57,7 +57,7 @@ public struct DebugLogger {
             tags: tags,
             traceId: traceId ?? Thread.debugProbeTraceId
         )
-        DebugEventBus.shared.enqueue(.log(event))
+        EventCallbacks.reportLog(event)
     }
 
     // MARK: - Convenience Methods

@@ -1,5 +1,5 @@
 // BridgeMessage.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
@@ -22,6 +22,9 @@ public enum BridgeMessage: Codable {
 
     /// 断点命中通知
     case breakpointHit(BreakpointHit)
+
+    /// 插件事件上报
+    case pluginEvent(PluginEvent)
 
     // MARK: - 服务端 -> 客户端
 
@@ -55,6 +58,9 @@ public enum BridgeMessage: Codable {
     /// 数据库响应
     case dbResponse(DBResponse)
 
+    /// 插件命令（服务端下发）
+    case pluginCommand(PluginCommand)
+
     /// 错误响应
     case error(code: Int, message: String)
 
@@ -70,6 +76,7 @@ public enum BridgeMessage: Codable {
         case heartbeat
         case events
         case breakpointHit
+        case pluginEvent
         case registered
         case toggleCapture
         case updateMockRules
@@ -80,6 +87,7 @@ public enum BridgeMessage: Codable {
         case updateChaosRules
         case dbCommand
         case dbResponse
+        case pluginCommand
         case error
     }
 
@@ -99,6 +107,9 @@ public enum BridgeMessage: Codable {
         case .breakpointHit:
             let hit = try container.decode(BreakpointHit.self, forKey: .payload)
             self = .breakpointHit(hit)
+        case .pluginEvent:
+            let event = try container.decode(PluginEvent.self, forKey: .payload)
+            self = .pluginEvent(event)
         case .registered:
             let payload = try container.decode(RegisteredPayload.self, forKey: .payload)
             self = .registered(sessionId: payload.sessionId)
@@ -134,6 +145,9 @@ public enum BridgeMessage: Codable {
         case .dbResponse:
             let response = try container.decode(DBResponse.self, forKey: .payload)
             self = .dbResponse(response)
+        case .pluginCommand:
+            let command = try container.decode(PluginCommand.self, forKey: .payload)
+            self = .pluginCommand(command)
         case .error:
             let payload = try container.decode(ErrorPayload.self, forKey: .payload)
             self = .error(code: payload.code, message: payload.message)
@@ -155,6 +169,9 @@ public enum BridgeMessage: Codable {
         case let .breakpointHit(hit):
             try container.encode(MessageType.breakpointHit, forKey: .type)
             try container.encode(hit, forKey: .payload)
+        case let .pluginEvent(event):
+            try container.encode(MessageType.pluginEvent, forKey: .type)
+            try container.encode(event, forKey: .payload)
         case let .registered(sessionId):
             try container.encode(MessageType.registered, forKey: .type)
             try container.encode(RegisteredPayload(sessionId: sessionId), forKey: .payload)
@@ -188,6 +205,9 @@ public enum BridgeMessage: Codable {
         case let .dbResponse(response):
             try container.encode(MessageType.dbResponse, forKey: .type)
             try container.encode(response, forKey: .payload)
+        case let .pluginCommand(command):
+            try container.encode(MessageType.pluginCommand, forKey: .type)
+            try container.encode(command, forKey: .payload)
         case let .error(code, message):
             try container.encode(MessageType.error, forKey: .type)
             try container.encode(ErrorPayload(code: code, message: message), forKey: .payload)

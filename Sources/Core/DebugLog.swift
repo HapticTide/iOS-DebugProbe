@@ -1,5 +1,5 @@
 // DebugLog.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
@@ -56,25 +56,25 @@ public enum DebugLog {
     public enum Subsystem {
         case bridge
         case network
-        case eventBus
         case persistence
         case breakpoint
         case chaos
         case mock
         case webSocket
         case database
+        case plugin
 
         var tag: String {
             switch self {
             case .bridge: "[Bridge]"
             case .network: "[Network]"
-            case .eventBus: "[EventBus]"
             case .persistence: "[Persistence]"
             case .breakpoint: "[Breakpoint]"
             case .chaos: "[Chaos]"
             case .mock: "[Mock]"
             case .webSocket: "[WebSocket]"
             case .database: "[Database]"
+            case .plugin: "[Plugin]"
             }
         }
     }
@@ -95,5 +95,11 @@ public enum DebugLog {
     public static func error(_ subsystem: Subsystem, _ message: @autoclosure () -> String) {
         guard isEnabled else { return }
         print("\(prefix)\(subsystem.tag) ❌ \(message())")
+    }
+
+    /// 输出带子系统标识的警告信息（受开关控制）
+    public static func warning(_ subsystem: Subsystem, _ message: @autoclosure () -> String) {
+        guard isEnabled else { return }
+        print("\(prefix)\(subsystem.tag) ⚠️ \(message())")
     }
 }

@@ -1,8 +1,23 @@
 // ChaosEngine.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
+//
+// 故障注入引擎 - 提供规则存储、匹配和混沌注入逻辑
+//
+// *** 架构说明 ***
+// 此引擎作为 ChaosPlugin 的内部实现使用，不直接对外暴露
+// 插件架构：
+//   1. ChaosPlugin 在 start() 时注册 EventCallbacks 处理器
+//   2. CaptureURLProtocol 通过 EventCallbacks 调用故障评估
+//   3. 处理器内部委托给 ChaosEngine.shared 执行实际逻辑
+//
+// 事件流：
+//   CaptureURLProtocol
+//     → EventCallbacks.chaosEvaluate()
+//     → ChaosPlugin handler
+//     → ChaosEngine.shared.evaluate()
 //
 
 import Foundation
@@ -10,10 +25,10 @@ import Foundation
 // MARK: - Chaos Engine
 
 /// 故障注入引擎，用于模拟网络异常情况
-public final class ChaosEngine {
+final class ChaosEngine {
     // MARK: - Singleton
 
-    public static let shared = ChaosEngine()
+    static let shared = ChaosEngine()
 
     // MARK: - Properties
 
@@ -21,7 +36,7 @@ public final class ChaosEngine {
     private let rulesLock = NSLock()
 
     /// 是否启用故障注入
-    public var isEnabled: Bool = true
+    var isEnabled: Bool = true
 
     // MARK: - Lifecycle
 
@@ -30,7 +45,7 @@ public final class ChaosEngine {
     // MARK: - Rule Management
 
     /// 更新故障注入规则列表
-    public func updateRules(_ newRules: [ChaosRule]) {
+    func updateRules(_ newRules: [ChaosRule]) {
         rulesLock.lock()
         rules = newRules.sorted { $0.priority > $1.priority }
         rulesLock.unlock()
@@ -38,7 +53,7 @@ public final class ChaosEngine {
     }
 
     /// 添加故障注入规则
-    public func addRule(_ rule: ChaosRule) {
+    func addRule(_ rule: ChaosRule) {
         rulesLock.lock()
         rules.append(rule)
         rules.sort { $0.priority > $1.priority }
@@ -46,21 +61,21 @@ public final class ChaosEngine {
     }
 
     /// 移除故障注入规则
-    public func removeRule(id: String) {
+    func removeRule(id: String) {
         rulesLock.lock()
         rules.removeAll { $0.id == id }
         rulesLock.unlock()
     }
 
     /// 清空所有规则
-    public func clearRules() {
+    func clearRules() {
         rulesLock.lock()
         rules.removeAll()
         rulesLock.unlock()
     }
 
     /// 获取当前规则列表
-    public func getRules() -> [ChaosRule] {
+    func getRules() -> [ChaosRule] {
         rulesLock.lock()
         defer { rulesLock.unlock() }
         return rules
@@ -71,7 +86,7 @@ public final class ChaosEngine {
     /// 评估请求是否应该注入故障
     /// - Parameter request: 请求对象
     /// - Returns: 故障结果
-    public func evaluate(request: URLRequest) -> ChaosResult {
+    func evaluate(request: URLRequest) -> ChaosResult {
         guard isEnabled else { return .none }
 
         guard let rule = matchingRule(for: request) else {
@@ -92,7 +107,7 @@ public final class ChaosEngine {
     ///   - response: 响应对象
     ///   - data: 响应数据
     /// - Returns: 故障结果
-    public func evaluateResponse(
+    func evaluateResponse(
         request: URLRequest,
         response _: HTTPURLResponse,
         data: Data?
@@ -206,12 +221,12 @@ public final class ChaosEngine {
 
 // MARK: - Error Types
 
-public enum ChaosError: Error, LocalizedError {
+enum ChaosError: Error, LocalizedError {
     case timeout
     case connectionReset
     case dropped
 
-    public var errorDescription: String? {
+    var errorDescription: String? {
         switch self {
         case .timeout:
             "Request timed out (chaos injection)"

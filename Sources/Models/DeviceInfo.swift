@@ -1,5 +1,5 @@
 // DeviceInfo.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
@@ -62,12 +62,26 @@ public struct DeviceInfo: Codable {
         self.dbInspectorEnabled = dbInspectorEnabled
         self.appIcon = appIcon
     }
+}
 
-    #if canImport(UIKit)
-        /// 从当前设备自动获取设备信息
-        public static func current() -> DeviceInfo {
+public enum DeviceInfoProvider {
+    public static func current() -> DeviceInfo {
+        let bundle = Bundle.main
+
+        // 公共字段（App 相关）
+        let appName = bundle.infoDictionary?["CFBundleDisplayName"] as? String
+            ?? bundle.infoDictionary?["CFBundleName"] as? String
+            ?? "Unknown"
+
+        let appVersion = bundle.infoDictionary?["CFBundleShortVersionString"] as? String
+            ?? "0.0.0"
+
+        let buildNumber = bundle.infoDictionary?[kCFBundleVersionKey as String] as? String
+            ?? "0"
+
+        // 平台相关字段
+        #if canImport(UIKit)
             let device = UIDevice.current
-            let bundle = Bundle.main
 
             #if targetEnvironment(simulator)
                 let isSimulator = true
@@ -75,34 +89,43 @@ public struct DeviceInfo: Codable {
                 let isSimulator = false
             #endif
 
-            return DeviceInfo(
-                deviceId: device.identifierForVendor?.uuidString ?? UUID().uuidString,
-                deviceName: device.name,
-                deviceModel: getDeviceModel(),
-                systemName: device.systemName,
-                systemVersion: device.systemVersion,
-                appName: bundle.infoDictionary?["CFBundleDisplayName"] as? String ?? bundle
-                    .infoDictionary?["CFBundleName"] as? String ?? "Unknown",
-                appVersion: bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0",
-                buildNumber: bundle.infoDictionary?[kCFBundleVersionKey as String] as? String ?? "0",
-                platform: "iOS",
-                isSimulator: isSimulator,
-                appIcon: getAppIconBase64()
-            )
-        }
+            let deviceId = device.identifierForVendor?.uuidString ?? UUID().uuidString
+            let deviceName = device.name
+            let deviceModel = getDeviceModel()
+            let systemName = device.systemName
+            let systemVersion = device.systemVersion
+            let platform = "iOS"
+            let appIcon = getAppIconBase64()
 
-        private static func getAppIconBase64() -> String? {
-            guard
-                let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
-                let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
-                let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String],
-                let lastIcon = iconFiles.last,
-                let image = UIImage(named: lastIcon) else {
-                return nil
-            }
-            return image.pngData()?.base64EncodedString()
-        }
+        #else
+            let isSimulator = false
+            let deviceId = UUID().uuidString
+            let deviceName = Host.current().localizedName ?? "Mac"
+            let deviceModel = macDeviceModel()
+            let systemName = "macOS"
+            let systemVersion = ProcessInfo.processInfo.operatingSystemVersionString
+            let platform = "macOS"
+            let appIcon: String? = nil
+        #endif
 
+        return DeviceInfo(
+            deviceId: deviceId,
+            deviceName: deviceName,
+            deviceModel: deviceModel,
+            systemName: systemName,
+            systemVersion: systemVersion,
+            appName: appName,
+            appVersion: appVersion,
+            buildNumber: buildNumber,
+            platform: platform,
+            isSimulator: isSimulator,
+            appIcon: appIcon
+        )
+    }
+
+    // MARK: - 私有平台实现
+
+    #if canImport(UIKit)
         /// 获取设备型号标识符（如 iPhone15,2）
         private static func getDeviceModel() -> String {
             var systemInfo = utsname()
@@ -116,8 +139,21 @@ public struct DeviceInfo: Codable {
             }
             return identifier
         }
+
+        private static func getAppIconBase64() -> String? {
+            guard
+                let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+                let primaryIcon = icons["CFBundlePrimaryIcon"] as? [String: Any],
+                let iconFiles = primaryIcon["CFBundleIconFiles"] as? [String],
+                let lastIcon = iconFiles.last,
+                let image = UIImage(named: lastIcon)
+            else {
+                return nil
+            }
+            return image.pngData()?.base64EncodedString()
+        }
     #else
-        static func macDeviceModel() -> String {
+        private static func macDeviceModel() -> String {
             var size: size_t = 0
             sysctlbyname("hw.model", nil, &size, nil, 0)
 

@@ -1,0 +1,305 @@
+// NetworkPlugin.swift
+// DebugProbe
+//
+// Created by Sun on 2025/12/09.
+// Copyright © 2025 Sun. All rights reserved.
+//
+
+import Foundation
+
+// MARK: - Network Plugin
+
+/// 网络监控插件
+/// 负责 HTTP/HTTPS 请求的拦截、记录和上报
+public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
+    // MARK: - Plugin Metadata
+
+    public let pluginId: String = BuiltinPluginId.network
+    public let displayName: String = "Network"
+    public let version: String = "1.0.0"
+    public let pluginDescription: String = "HTTP/HTTPS 网络请求监控"
+    public let dependencies: [String] = []
+
+    // MARK: - State
+
+    public private(set) var state: PluginState = .uninitialized
+    public private(set) var isEnabled: Bool = true
+
+    // MARK: - Configuration
+
+    /// 网络捕获模式
+    public var captureMode: NetworkCaptureMode = .automatic
+
+    /// 是否仅捕获 HTTP（不含 WebSocket）
+    public var httpOnly: Bool = false
+
+    // MARK: - Private Properties
+
+    private weak var context: PluginContext?
+    private let stateQueue = DispatchQueue(label: "com.sunimp.debugprobe.network.state")
+
+    // MARK: - Lifecycle
+
+    public init() {}
+
+    public func initialize(context: PluginContext) {
+        self.context = context
+
+        // 从配置恢复状态
+        if let enabled: Bool = context.getConfiguration(for: "network.enabled") {
+            isEnabled = enabled
+        }
+        if let mode: String = context.getConfiguration(for: "network.captureMode") {
+            captureMode = mode == "manual" ? .manual : .automatic
+        }
+
+        state = .stopped
+        context.logInfo("NetworkPlugin initialized")
+    }
+
+    public func start() async throws {
+        guard state != .running else { return }
+
+        stateQueue.sync { state = .starting }
+
+        // 确定捕获范围
+        let scope: NetworkCaptureScope = httpOnly ? .http : .all
+
+        // 注册事件回调（CaptureURLProtocol 通过 EventCallbacks 上报事件）
+        registerEventCallback()
+
+        // 启动网络捕获
+        NetworkInstrumentation.shared.start(mode: captureMode, scope: scope)
+
+        stateQueue.sync { state = .running }
+        context?.logInfo("NetworkPlugin started with mode: \(captureMode), scope: \(scope)")
+    }
+
+    public func pause() async {
+        guard state == .running else { return }
+
+        NetworkInstrumentation.shared.stop()
+        stateQueue.sync { state = .paused }
+        context?.logInfo("NetworkPlugin paused")
+    }
+
+    public func resume() async {
+        guard state == .paused else { return }
+
+        let scope: NetworkCaptureScope = httpOnly ? .http : .all
+        NetworkInstrumentation.shared.start(mode: captureMode, scope: scope)
+
+        stateQueue.sync { state = .running }
+        context?.logInfo("NetworkPlugin resumed")
+    }
+
+    public func stop() async {
+        guard state == .running || state == .paused else { return }
+
+        stateQueue.sync { state = .stopping }
+
+        NetworkInstrumentation.shared.stop()
+        unregisterEventCallback()
+
+        stateQueue.sync { state = .stopped }
+        context?.logInfo("NetworkPlugin stopped")
+    }
+
+    public func handleCommand(_ command: PluginCommand) async {
+        switch command.commandType {
+        case "enable":
+            await enable()
+            sendSuccessResponse(for: command)
+
+        case "disable":
+            await disable()
+            sendSuccessResponse(for: command)
+
+        case "set_config":
+            await handleSetConfig(command)
+
+        case "get_status":
+            await handleGetStatus(command)
+
+        default:
+            sendErrorResponse(for: command, message: "Unknown command type: \(command.commandType)")
+        }
+    }
+
+    public func onConfigurationChanged(key: String) {
+        guard key.hasPrefix("network.") else { return }
+
+        switch key {
+        case "network.enabled":
+            if let enabled: Bool = context?.getConfiguration(for: key) {
+                Task {
+                    if enabled {
+                        await enable()
+                    } else {
+                        await disable()
+                    }
+                }
+            }
+        case "network.captureMode":
+            if let mode: String = context?.getConfiguration(for: key) {
+                captureMode = mode == "manual" ? .manual : .automatic
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Public Methods
+
+    /// 启用网络捕获
+    public func enable() async {
+        isEnabled = true
+        context?.setConfiguration(true, for: "network.enabled")
+
+        if state == .paused {
+            await resume()
+        } else if state == .stopped {
+            try? await start()
+        }
+    }
+
+    /// 禁用网络捕获
+    public func disable() async {
+        isEnabled = false
+        context?.setConfiguration(false, for: "network.enabled")
+
+        if state == .running {
+            await pause()
+        }
+    }
+
+    // MARK: - Event Callback Registration
+
+    /// 注册事件回调
+    /// CaptureURLProtocol 通过 EventCallbacks.reportHTTP() 上报事件
+    /// NetworkPlugin 接收后通过 EventCallbacks.reportEvent() 发送到 BridgeClient
+    private func registerEventCallback() {
+        EventCallbacks.onHTTPEvent = { [weak self] httpEvent in
+            self?.handleHTTPEvent(httpEvent)
+        }
+    }
+
+    /// 注销事件回调
+    private func unregisterEventCallback() {
+        EventCallbacks.onHTTPEvent = nil
+    }
+
+    /// 处理 HTTP 事件
+    /// - Parameter httpEvent: 从 CaptureURLProtocol 捕获的 HTTP 事件
+    private func handleHTTPEvent(_ httpEvent: HTTPEvent) {
+        guard isEnabled else { return }
+
+        // 1. 通过统一回调发送到 BridgeClient
+        EventCallbacks.reportEvent(.http(httpEvent))
+
+        // 2. 上报插件事件（用于插件系统内部状态管理）
+        do {
+            let event = try PluginEvent(
+                pluginId: pluginId,
+                eventType: "http_event",
+                eventId: httpEvent.request.id,
+                timestamp: httpEvent.request.startTime,
+                encodable: httpEvent
+            )
+            context?.sendEvent(event)
+        } catch {
+            context?.logError("Failed to encode HTTP event: \(error)")
+        }
+    }
+
+    // MARK: - Command Handlers
+
+    private func handleSetConfig(_ command: PluginCommand) async {
+        guard let payload = command.payload else {
+            sendErrorResponse(for: command, message: "Missing payload")
+            return
+        }
+
+        do {
+            let config = try JSONDecoder().decode(NetworkPluginConfig.self, from: payload)
+
+            if let mode = config.captureMode {
+                captureMode = mode == "manual" ? .manual : .automatic
+                context?.setConfiguration(mode, for: "network.captureMode")
+            }
+
+            if let httpOnly = config.httpOnly {
+                self.httpOnly = httpOnly
+            }
+
+            // 如果正在运行，重启以应用新配置
+            if state == .running {
+                await stop()
+                try await start()
+            }
+
+            sendSuccessResponse(for: command)
+        } catch {
+            sendErrorResponse(for: command, message: "Invalid config format: \(error)")
+        }
+    }
+
+    private func handleGetStatus(_ command: PluginCommand) async {
+        let status = NetworkPluginStatus(
+            isEnabled: isEnabled,
+            captureMode: captureMode == .automatic ? "automatic" : "manual",
+            httpOnly: httpOnly,
+            state: state.rawValue
+        )
+
+        do {
+            let payload = try JSONEncoder().encode(status)
+            let response = PluginCommandResponse(
+                pluginId: pluginId,
+                commandId: command.commandId,
+                success: true,
+                payload: payload
+            )
+            context?.sendCommandResponse(response)
+        } catch {
+            sendErrorResponse(for: command, message: "Failed to encode status")
+        }
+    }
+
+    // MARK: - Response Helpers
+
+    private func sendSuccessResponse(for command: PluginCommand) {
+        let response = PluginCommandResponse(
+            pluginId: pluginId,
+            commandId: command.commandId,
+            success: true
+        )
+        context?.sendCommandResponse(response)
+    }
+
+    private func sendErrorResponse(for command: PluginCommand, message: String) {
+        let response = PluginCommandResponse(
+            pluginId: pluginId,
+            commandId: command.commandId,
+            success: false,
+            errorMessage: message
+        )
+        context?.sendCommandResponse(response)
+    }
+}
+
+// MARK: - Configuration DTOs
+
+/// 网络插件配置
+struct NetworkPluginConfig: Codable {
+    let captureMode: String?
+    let httpOnly: Bool?
+}
+
+/// 网络插件状态
+struct NetworkPluginStatus: Codable {
+    let isEnabled: Bool
+    let captureMode: String
+    let httpOnly: Bool
+    let state: String
+}

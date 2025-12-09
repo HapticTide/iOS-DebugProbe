@@ -1,15 +1,19 @@
 // DDLogBridge.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
+//
+// CocoaLumberjack 日志桥接器
+// LogPlugin 通过 DDLog.add() 注册此桥接器
+// 捕获的日志通过 EventCallbacks.reportLog() 上报给 LogPlugin
 //
 
 #if canImport(CocoaLumberjack)
     import CocoaLumberjack
     import Foundation
 
-    /// CocoaLumberjack 日志桥接器，将 DDLog 日志转发到 DebugEventBus
+    /// CocoaLumberjack 日志桥接器，将 DDLog 日志转发到 EventCallbacks
     public final class DDLogBridge: DDAbstractLogger {
         // MARK: - Properties
 
@@ -50,7 +54,7 @@
                 traceId: extractTraceId(from: logMessage)
             )
 
-            DebugEventBus.shared.enqueue(.log(event))
+            EventCallbacks.reportLog(event)
         }
 
         // MARK: - Helpers

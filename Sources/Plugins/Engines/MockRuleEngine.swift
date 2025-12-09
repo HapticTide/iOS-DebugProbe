@@ -1,17 +1,32 @@
 // MockRuleEngine.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
+//
+// Mock 规则引擎 - 提供规则存储、匹配和应用逻辑
+//
+// *** 架构说明 ***
+// 此引擎作为 MockPlugin 的内部实现使用，不直接对外暴露
+// 插件架构：
+//   1. MockPlugin 在 start() 时注册 EventCallbacks 处理器
+//   2. CaptureURLProtocol 通过 EventCallbacks 调用 Mock 处理
+//   3. 处理器内部委托给 MockRuleEngine.shared 执行实际逻辑
+//
+// 事件流：
+//   CaptureURLProtocol
+//     → EventCallbacks.mockHTTPRequest()
+//     → MockPlugin handler
+//     → MockRuleEngine.shared.processHTTPRequest()
 //
 
 import Foundation
 
 /// Mock 规则引擎，负责管理和执行 Mock 规则
-public final class MockRuleEngine {
+final class MockRuleEngine {
     // MARK: - Singleton
 
-    public static let shared = MockRuleEngine()
+    static let shared = MockRuleEngine()
 
     // MARK: - State
 
@@ -20,7 +35,7 @@ public final class MockRuleEngine {
 
     // MARK: - Callbacks
 
-    public var onRulesUpdated: (([MockRule]) -> Void)?
+    var onRulesUpdated: (([MockRule]) -> Void)?
 
     // MARK: - Lifecycle
 
@@ -29,7 +44,7 @@ public final class MockRuleEngine {
     // MARK: - Rule Management
 
     /// 更新所有规则
-    public func updateRules(_ newRules: [MockRule]) {
+    func updateRules(_ newRules: [MockRule]) {
         rulesLock.lock()
         rules = newRules.sorted { $0.priority > $1.priority }
         rulesLock.unlock()
@@ -40,7 +55,7 @@ public final class MockRuleEngine {
     }
 
     /// 添加单条规则
-    public func addRule(_ rule: MockRule) {
+    func addRule(_ rule: MockRule) {
         rulesLock.lock()
         rules.append(rule)
         rules.sort { $0.priority > $1.priority }
@@ -48,21 +63,21 @@ public final class MockRuleEngine {
     }
 
     /// 移除规则
-    public func removeRule(id: String) {
+    func removeRule(id: String) {
         rulesLock.lock()
         rules.removeAll { $0.id == id }
         rulesLock.unlock()
     }
 
     /// 清空所有规则
-    public func clearRules() {
+    func clearRules() {
         rulesLock.lock()
         rules.removeAll()
         rulesLock.unlock()
     }
 
     /// 获取所有规则
-    public func getAllRules() -> [MockRule] {
+    func getAllRules() -> [MockRule] {
         rulesLock.lock()
         defer { rulesLock.unlock() }
         return rules
@@ -71,7 +86,7 @@ public final class MockRuleEngine {
     // MARK: - HTTP Request Processing
 
     /// 处理 HTTP 请求，返回修改后的请求和可能的 Mock 响应
-    public func processHTTPRequest(
+    func processHTTPRequest(
         _ request: URLRequest
     ) -> (modifiedRequest: URLRequest, mockResponse: HTTPEvent.Response?, matchedRuleId: String?) {
         rulesLock.lock()
@@ -133,7 +148,7 @@ public final class MockRuleEngine {
     // MARK: - WebSocket Processing
 
     /// 处理 WebSocket 发送帧
-    public func processWSOutgoingFrame(
+    func processWSOutgoingFrame(
         _ payload: Data,
         sessionId: String,
         sessionURL: String
@@ -170,7 +185,7 @@ public final class MockRuleEngine {
     }
 
     /// 处理 WebSocket 接收帧
-    public func processWSIncomingFrame(
+    func processWSIncomingFrame(
         _ payload: Data,
         sessionId: String,
         sessionURL: String

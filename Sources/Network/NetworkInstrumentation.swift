@@ -1,8 +1,13 @@
 // NetworkInstrumentation.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
+//
+// HTTP/HTTPS 网络请求捕获基础设施
+// - CaptureURLProtocol: URLProtocol 子类，拦截所有 HTTP/HTTPS 请求
+// - NetworkInstrumentation: 管理 URLProtocol 注册和 Swizzle
+// NetworkPlugin 通过此模块捕获网络事件，通过 EventCallbacks 上报
 //
 
 import Foundation
@@ -241,8 +246,14 @@ public final class CaptureURLProtocol: URLProtocol {
         requestId = UUID().uuidString
         traceId = request.value(forHTTPHeaderField: "X-Trace-Id")
 
-        // 1. 处理 Mock 规则
-        let (modifiedRequest, mockResponse, ruleId) = MockRuleEngine.shared.processHTTPRequest(request)
+        // 1. 处理 Mock 规则 (通过 EventCallbacks 委托给 MockPlugin)
+        var modifiedRequest = request
+        var mockResponse: HTTPEvent.Response?
+        var ruleId: String?
+
+        if let mockHandler = EventCallbacks.mockHTTPRequest {
+            (modifiedRequest, mockResponse, ruleId) = mockHandler(request)
+        }
         mockRuleId = ruleId
 
         if let mockResponse {
@@ -252,8 +263,8 @@ public final class CaptureURLProtocol: URLProtocol {
             return
         }
 
-        // 2. 处理故障注入 (Chaos)
-        let chaosResult = ChaosEngine.shared.evaluate(request: modifiedRequest)
+        // 2. 处理故障注入 (Chaos) - 通过 EventCallbacks 委托给 ChaosPlugin
+        let chaosResult = EventCallbacks.chaosEvaluate?(modifiedRequest) ?? .none
         switch chaosResult {
         case .none:
             break
@@ -304,17 +315,14 @@ public final class CaptureURLProtocol: URLProtocol {
             return
         }
 
-        // 3. 处理断点 (异步)
-        if BreakpointEngine.shared.isEnabled {
+        // 3. 处理断点 (异步) - 通过 EventCallbacks 委托给 BreakpointPlugin
+        if let breakpointChecker = EventCallbacks.breakpointCheckRequest {
             // 检查是否有响应阶段的断点规则
-            shouldInterceptResponse = BreakpointEngine.shared.hasResponseBreakpoint(for: modifiedRequest)
+            shouldInterceptResponse = EventCallbacks.breakpointHasResponseRule?(modifiedRequest) ?? false
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let result = await BreakpointEngine.shared.checkRequestBreakpoint(
-                    requestId: requestId,
-                    request: modifiedRequest
-                )
+                let result = await breakpointChecker(requestId, modifiedRequest)
                 switch result {
                 case let .proceed(finalRequest):
                     proceedWithRequest(finalRequest)
@@ -455,7 +463,7 @@ public final class CaptureURLProtocol: URLProtocol {
         // 构建性能时间线
         let timing = extractTiming(from: taskMetrics)
 
-        // 创建事件并入队
+        // 创建事件并上报
         let event = HTTPEvent(
             request: httpRequest,
             response: httpResponse,
@@ -464,7 +472,7 @@ public final class CaptureURLProtocol: URLProtocol {
             mockRuleId: mockRuleId
         )
 
-        DebugEventBus.shared.enqueue(.http(event))
+        EventCallbacks.reportHTTP(event)
     }
 
     // MARK: - Timing Extraction
@@ -627,16 +635,16 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
             return
         }
 
-        // 响应阶段断点检查
-        if BreakpointEngine.shared.isEnabled {
+        // 响应阶段断点检查 - 通过 EventCallbacks 委托给 BreakpointPlugin
+        if let breakpointResponseChecker = EventCallbacks.breakpointCheckResponse {
             Task { @MainActor [weak self] in
                 guard let self else { return }
 
-                let modifiedResponse = await BreakpointEngine.shared.checkResponseBreakpoint(
-                    requestId: requestId,
-                    request: request,
-                    response: httpResponse,
-                    body: receivedData
+                let modifiedResponse = await breakpointResponseChecker(
+                    requestId,
+                    request,
+                    httpResponse,
+                    receivedData
                 )
 
                 if let modifiedResponse {

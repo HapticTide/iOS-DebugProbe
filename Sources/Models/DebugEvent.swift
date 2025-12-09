@@ -1,5 +1,5 @@
 // DebugEvent.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
@@ -9,7 +9,7 @@ import Foundation
 
 // MARK: - 顶层统一事件
 
-/// 所有调试事件的统一枚举，便于在 EventBus 和网络传输中统一处理
+/// 所有调试事件的统一枚举，便于网络传输中统一处理
 public enum DebugEvent: Codable {
     case http(HTTPEvent)
     case webSocket(WSEvent)

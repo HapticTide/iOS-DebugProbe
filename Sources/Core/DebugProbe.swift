@@ -1,15 +1,11 @@
 // DebugProbe.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
 //
 
 import Foundation
-
-#if canImport(CocoaLumberjack)
-    import CocoaLumberjack
-#endif
 
 /// Debug Probe 主入口，统一管理所有调试功能
 public final class DebugProbe {
@@ -77,13 +73,13 @@ public final class DebugProbe {
 
     // MARK: - Components
 
-    public let eventBus = DebugEventBus.shared
     public let bridgeClient = DebugBridgeClient()
-    public let mockRuleEngine = MockRuleEngine.shared
 
-    #if canImport(CocoaLumberjack)
-        private var ddLogger: DDLogBridge?
-    #endif
+    /// 插件管理器
+    public let pluginManager = PluginManager.shared
+
+    /// 插件桥接适配器
+    private var pluginBridgeAdapter: PluginBridgeAdapter?
 
     // MARK: - Lifecycle
 
@@ -94,19 +90,6 @@ public final class DebugProbe {
     // MARK: - Setup
 
     private func setupCallbacks() {
-        // Mock 规则更新回调
-        bridgeClient.onMockRulesReceived = { [weak self] rules in
-            self?.mockRuleEngine.updateRules(rules)
-        }
-
-        // 捕获开关回调
-        bridgeClient.onCaptureToggled = { [weak self] network, log, websocket, database in
-            self?.setNetworkCaptureEnabled(network)
-            self?.setLogCaptureEnabled(log)
-            self?.setWebSocketCaptureEnabled(websocket)
-            self?.setDatabaseInspectorEnabled(database)
-        }
-
         // 连接状态回调
         bridgeClient.onStateChanged = { [weak self] state in
             DebugLog.debug(.bridge, "State: \(state)")
@@ -134,23 +117,10 @@ public final class DebugProbe {
         }
 
         self.configuration = configuration
-        eventBus.maxBufferSize = configuration.maxBufferSize
-
-        // 启动网络捕获
-        if configuration.enableNetworkCapture {
-            NetworkInstrumentation.shared.start(
-                mode: configuration.networkCaptureMode,
-                scope: configuration.networkCaptureScope
-            )
-        }
-
-        // 启动日志捕获
-        if configuration.enableLogCapture {
-            startLogCapture()
-        }
 
         // 配置 Bridge Client
         var bridgeConfig = DebugBridgeClient.Configuration(hubURL: configuration.hubURL, token: configuration.token)
+        bridgeConfig.maxBufferSize = configuration.maxBufferSize
         bridgeConfig.enablePersistence = configuration.enablePersistence
 
         // 配置持久化队列
@@ -163,6 +133,18 @@ public final class DebugProbe {
 
         // 连接到 Debug Hub
         bridgeClient.connect(configuration: bridgeConfig)
+
+        // 注册并启动插件系统（所有功能通过插件管理）
+        registerBuiltinPlugins()
+
+        // 启动插件桥接适配器（先于插件启动，以便接收初始配置）
+        pluginBridgeAdapter = PluginBridgeAdapter(
+            pluginManager: pluginManager,
+            bridgeClient: bridgeClient
+        )
+
+        // 启动插件系统（网络、日志等捕获均由插件控制）
+        startPluginSystem(configuration: configuration)
 
         isStarted = true
         DebugLog.info("Started with hub: \(configuration.hubURL)")
@@ -177,10 +159,14 @@ public final class DebugProbe {
     public func stop() {
         guard isStarted else { return }
 
+        // 停止插件桥接适配器
+        pluginBridgeAdapter = nil
+
+        // 停止插件系统（会自动停止所有插件管理的功能）
+        stopPluginSystem()
+
         bridgeClient.disconnect()
-        NetworkInstrumentation.shared.stop()
-        stopLogCapture()
-        eventBus.clear()
+        bridgeClient.clearBuffer()
 
         isStarted = false
         DebugLog.info("Stopped")
@@ -232,94 +218,58 @@ public final class DebugProbe {
         DebugLog.info("Reconnected to \(hubURL)")
     }
 
-    // MARK: - Network Capture Control
+    // MARK: - Capture Control (通过插件系统统一管理)
 
-    private var isNetworkCaptureEnabled: Bool = true
-
+    /// 设置网络捕获是否启用
+    /// - Parameter enabled: 是否启用
     public func setNetworkCaptureEnabled(_ enabled: Bool) {
-        isNetworkCaptureEnabled = enabled
-        DebugLog.info(.network, "HTTP capture \(enabled ? "enabled" : "disabled")")
-
-        if enabled {
-            // 仅当网络检测未运行时才启动
-            if !NetworkInstrumentation.shared.isEnabled {
-                let mode = configuration?.networkCaptureMode ?? .automatic
-                // 仅启动 HTTP 捕获（WebSocket 由单独开关控制）
-                NetworkInstrumentation.shared.start(mode: mode, scope: .http)
-            }
-        } else {
-            // 如果 WebSocket 也关闭了，才完全停止
-            if !isWebSocketCaptureEnabled {
-                NetworkInstrumentation.shared.stop()
-            }
+        Task {
+            await pluginManager.setPluginEnabled(BuiltinPluginId.network, enabled: enabled)
         }
     }
 
+    /// 获取网络捕获是否启用
     public func isNetworkCaptureActive() -> Bool {
-        isNetworkCaptureEnabled
+        pluginManager.isPluginEnabled(BuiltinPluginId.network)
     }
 
-    // MARK: - Log Capture Control
-
-    private var isLogCaptureEnabled: Bool = true
-
+    /// 设置日志捕获是否启用
+    /// - Parameter enabled: 是否启用
     public func setLogCaptureEnabled(_ enabled: Bool) {
-        isLogCaptureEnabled = enabled
-        DebugLog.info(.bridge, "Log capture \(enabled ? "enabled" : "disabled")")
-
-        if enabled {
-            startLogCapture()
-        } else {
-            stopLogCapture()
+        Task {
+            await pluginManager.setPluginEnabled(BuiltinPluginId.log, enabled: enabled)
         }
     }
 
+    /// 获取日志捕获是否启用
     public func isLogCaptureActive() -> Bool {
-        isLogCaptureEnabled
+        pluginManager.isPluginEnabled(BuiltinPluginId.log)
     }
 
-    private func startLogCapture() {
-        #if canImport(CocoaLumberjack)
-            if ddLogger == nil {
-                ddLogger = DDLogBridge()
-                DDLog.add(ddLogger!)
-            }
-        #endif
-    }
-
-    private func stopLogCapture() {
-        #if canImport(CocoaLumberjack)
-            if let logger = ddLogger {
-                DDLog.remove(logger)
-                ddLogger = nil
-            }
-        #endif
-    }
-
-    // MARK: - WebSocket Capture Control
-
-    private var isWebSocketCaptureEnabled: Bool = true
-
+    /// 设置 WebSocket 捕获是否启用
+    /// - Parameter enabled: 是否启用
     public func setWebSocketCaptureEnabled(_ enabled: Bool) {
-        isWebSocketCaptureEnabled = enabled
-        DebugLog.info(.webSocket, "WebSocket capture \(enabled ? "enabled" : "disabled")")
+        Task {
+            await pluginManager.setPluginEnabled(BuiltinPluginId.webSocket, enabled: enabled)
+        }
     }
 
+    /// 获取 WebSocket 捕获是否启用
     public func isWebSocketCaptureActive() -> Bool {
-        isWebSocketCaptureEnabled
+        pluginManager.isPluginEnabled(BuiltinPluginId.webSocket)
     }
 
-    // MARK: - Database Inspector Control
-
-    private var isDatabaseInspectorEnabled: Bool = true
-
+    /// 设置数据库检查器是否启用
+    /// - Parameter enabled: 是否启用
     public func setDatabaseInspectorEnabled(_ enabled: Bool) {
-        isDatabaseInspectorEnabled = enabled
-        DebugLog.info(.database, "Database inspector \(enabled ? "enabled" : "disabled")")
+        Task {
+            await pluginManager.setPluginEnabled(BuiltinPluginId.database, enabled: enabled)
+        }
     }
 
+    /// 获取数据库检查器是否启用
     public func isDatabaseInspectorActive() -> Bool {
-        isDatabaseInspectorEnabled
+        pluginManager.isPluginEnabled(BuiltinPluginId.database)
     }
 
     // MARK: - WebSocket Debug Hooks
@@ -328,10 +278,6 @@ public final class DebugProbe {
     public typealias WSSessionCreatedHook = (_ sessionId: String, _ url: String, _ headers: [String: String]) -> Void
     public typealias WSSessionClosedHook = (_ sessionId: String, _ closeCode: Int?, _ reason: String?) -> Void
     public typealias WSMessageHook = (_ sessionId: String, _ data: Data) -> Void
-
-    /// 内部维护的 sessionId -> URL 映射，用于在帧事件中恢复 URL
-    private var wsSessionURLCache: [String: String] = [:]
-    private let wsSessionURLCacheLock = NSLock()
 
     /// 获取用于注入到宿主 App 的 WebSocket 调试钩子
     ///
@@ -354,83 +300,17 @@ public final class DebugProbe {
         onMessageSent: WSMessageHook,
         onMessageReceived: WSMessageHook
     ) {
-        let onSessionCreated: WSSessionCreatedHook = { [weak self] sessionId, url, headers in
-            DebugLog.info(.webSocket, "Hook: Session created - \(url)")
-
-            // 缓存 sessionId -> URL 映射
-            self?.wsSessionURLCacheLock.lock()
-            self?.wsSessionURLCache[sessionId] = url
-            self?.wsSessionURLCacheLock.unlock()
-
-            let session = WSEvent.Session(
-                id: sessionId,
-                url: url,
-                requestHeaders: headers,
-                subprotocols: []
+        // 代理到 WebSocketPlugin
+        guard let wsPlugin = pluginManager.getPlugin(pluginId: BuiltinPluginId.webSocket) as? WebSocketPlugin else {
+            // 如果插件未注册，返回空操作
+            return (
+                onSessionCreated: { _, _, _ in },
+                onSessionClosed: { _, _, _ in },
+                onMessageSent: { _, _ in },
+                onMessageReceived: { _, _ in }
             )
-            let event = WSEvent(kind: .sessionCreated(session))
-            DebugEventBus.shared.enqueue(.webSocket(event))
         }
-
-        let onSessionClosed: WSSessionClosedHook = { [weak self] sessionId, closeCode, reason in
-            DebugLog.info(.webSocket, "Hook: Session closed - \(sessionId), code: \(closeCode ?? -1)")
-
-            // 获取缓存的 URL（关闭时不删除缓存，因为后续可能还有帧事件）
-            self?.wsSessionURLCacheLock.lock()
-            let cachedURL = self?.wsSessionURLCache[sessionId] ?? ""
-            self?.wsSessionURLCacheLock.unlock()
-
-            var session = WSEvent.Session(id: sessionId, url: cachedURL, requestHeaders: [:], subprotocols: [])
-            session.disconnectTime = Date()
-            session.closeCode = closeCode
-            session.closeReason = reason
-            let event = WSEvent(kind: .sessionClosed(session))
-            DebugEventBus.shared.enqueue(.webSocket(event))
-        }
-
-        let onMessageSent: WSMessageHook = { [weak self] sessionId, data in
-            DebugLog.debug(.webSocket, "Hook: Message sent - \(sessionId), size: \(data.count)")
-
-            // 从缓存获取 URL
-            self?.wsSessionURLCacheLock.lock()
-            let cachedURL = self?.wsSessionURLCache[sessionId]
-            self?.wsSessionURLCacheLock.unlock()
-
-            let frame = WSEvent.Frame(
-                sessionId: sessionId,
-                sessionUrl: cachedURL,
-                direction: .send,
-                opcode: .binary,
-                payload: data,
-                isMocked: false,
-                mockRuleId: nil
-            )
-            let event = WSEvent(kind: .frame(frame))
-            DebugEventBus.shared.enqueue(.webSocket(event))
-        }
-
-        let onMessageReceived: WSMessageHook = { [weak self] sessionId, data in
-            DebugLog.debug(.webSocket, "Hook: Message received - \(sessionId), size: \(data.count)")
-
-            // 从缓存获取 URL
-            self?.wsSessionURLCacheLock.lock()
-            let cachedURL = self?.wsSessionURLCache[sessionId]
-            self?.wsSessionURLCacheLock.unlock()
-
-            let frame = WSEvent.Frame(
-                sessionId: sessionId,
-                sessionUrl: cachedURL,
-                direction: .receive,
-                opcode: .binary,
-                payload: data,
-                isMocked: false,
-                mockRuleId: nil
-            )
-            let event = WSEvent(kind: .frame(frame))
-            DebugEventBus.shared.enqueue(.webSocket(event))
-        }
-
-        return (onSessionCreated, onSessionClosed, onMessageSent, onMessageReceived)
+        return wsPlugin.getHooks()
     }
 
     // MARK: - Manual Event Submission
@@ -460,7 +340,7 @@ public final class DebugProbe {
             tags: tags,
             traceId: traceId
         )
-        eventBus.enqueue(.log(event))
+        EventCallbacks.reportEvent(.log(event))
     }
 }
 
@@ -509,5 +389,74 @@ public extension DebugProbe {
         line: Int = #line
     ) {
         log(level: .error, message: message, tags: tags, traceId: traceId, file: file, function: function, line: line)
+    }
+}
+
+// MARK: - Plugin System Extension
+
+public extension DebugProbe {
+    /// 注册内置插件
+    private func registerBuiltinPlugins() {
+        DebugLog.debug("[Plugin] Registering builtin plugins...")
+
+        // 注册核心监控插件
+        try? pluginManager.register(plugin: NetworkPlugin())
+        try? pluginManager.register(plugin: LogPlugin())
+        try? pluginManager.register(plugin: DatabasePlugin())
+        try? pluginManager.register(plugin: WebSocketPlugin())
+
+        // 注册调试工具插件
+        try? pluginManager.register(plugin: MockPlugin())
+        try? pluginManager.register(plugin: BreakpointPlugin())
+        try? pluginManager.register(plugin: ChaosPlugin())
+
+        DebugLog.info("[Plugin] \(pluginManager.getAllPlugins().count) builtin plugins registered")
+    }
+
+    /// 启动插件系统
+    /// - Parameter configuration: 启动配置
+    private func startPluginSystem(configuration: Configuration) {
+        DebugLog.debug("[Plugin] Starting plugin system...")
+
+        // 构建设备信息
+        let deviceInfo = DeviceInfoProvider.current()
+
+        Task {
+            do {
+                // 启动插件系统
+                try await pluginManager.startAll(deviceInfo: deviceInfo)
+
+                // 根据配置启用/禁用插件
+                if !configuration.enableNetworkCapture {
+                    await pluginManager.setPluginEnabled(BuiltinPluginId.network, enabled: false)
+                }
+                if !configuration.enableLogCapture {
+                    await pluginManager.setPluginEnabled(BuiltinPluginId.log, enabled: false)
+                }
+            } catch {
+                DebugLog.error("[Plugin] Failed to start plugin system: \(error)")
+            }
+        }
+    }
+
+    /// 停止插件系统
+    private func stopPluginSystem() {
+        DebugLog.debug("[Plugin] Stopping plugin system...")
+        Task {
+            await pluginManager.stopAll()
+        }
+    }
+
+    /// 注册自定义插件
+    /// - Parameter plugin: 符合 DebugProbePlugin 协议的插件实例
+    func registerPlugin(_ plugin: DebugProbePlugin) {
+        try? pluginManager.register(plugin: plugin)
+    }
+
+    /// 获取指定 ID 的插件
+    /// - Parameter id: 插件 ID
+    /// - Returns: 插件实例（如果存在）
+    func plugin(withId id: String) -> DebugProbePlugin? {
+        pluginManager.getPlugin(pluginId: id)
     }
 }

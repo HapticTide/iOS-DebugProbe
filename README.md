@@ -73,7 +73,7 @@ func application(_ application: UIApplication, didFinishLaunchingWithOptions...)
         hubURL: URL(string: "ws://127.0.0.1:8081/debug-bridge")!,
         token: "your-device-token"
     )
-    DebugProbe.shared.start(with: config)
+    DebugProbe.shared.start(configuration: config)
     #endif
     
     return true
@@ -105,7 +105,7 @@ config.enablePersistence = true
 config.maxPersistenceQueueSize = 100_000
 config.persistenceRetentionDays = 3
 
-DebugProbe.shared.start(with: config)
+DebugProbe.shared.start(configuration: config)
 ```
 
 ### 3. 注册数据库（可选）
@@ -136,23 +136,87 @@ DebugProbe.shared.log(
 
 ## 架构
 
+### 插件化架构
+
+DebugProbe 采用插件化架构，所有功能模块（网络、日志、Mock 等）均以插件形式实现：
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              DebugProbe SDK                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌───────────────┐   ┌───────────────┐   ┌───────────────┐                 │
+│  │ NetworkPlugin │   │   LogPlugin   │   │WebSocketPlugin│                 │
+│  │  (HTTP 捕获)   │   │  (日志捕获)    │   │  (WS 监控)    │                 │
+│  └───────┬───────┘   └───────┬───────┘   └───────┬───────┘                 │
+│          │                   │                   │                          │
+│          ▼                   ▼                   ▼                          │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                        EventCallbacks                                  │ │
+│  │  • onHTTPEvent / onLogEvent / onWebSocketEvent (捕获层 → 插件层)      │ │
+│  │  • onDebugEvent (插件层 → BridgeClient)                               │ │
+│  │  • mockHTTPRequest / mockWSFrame (Mock 拦截)                          │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│          │                                                                  │
+│          ▼                                                                  │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │                       DebugBridgeClient                                │ │
+│  │  • 内置事件缓冲区 (丢弃策略、持久化)                                    │ │
+│  │  • WebSocket 通信                                                      │ │
+│  │  • 批量发送、断线重连                                                   │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                    │                                        │
+└────────────────────────────────────┼────────────────────────────────────────┘
+                                     │ WebSocket
+                                     ▼
+                              ┌─────────────┐
+                              │  DebugHub   │
+                              │  (服务端)    │
+                              └─────────────┘
+```
+
+### 内置插件
+
+| 插件 ID | 插件名称 | 功能 |
+|---------|---------|------|
+| `network` | NetworkPlugin | HTTP/HTTPS 请求捕获 |
+| `log` | LogPlugin | 日志捕获（DDLog, OSLog） |
+| `websocket` | WebSocketPlugin | WebSocket 连接监控 |
+| `mock` | MockPlugin | HTTP/WS Mock 规则管理 |
+| `database` | DatabasePlugin | SQLite 数据库检查 |
+| `breakpoint` | BreakpointPlugin | 请求/响应断点调试 |
+| `chaos` | ChaosPlugin | 故障注入（Chaos Engineering） |
+
+### 目录结构
+
 ```
 DebugProbe/
 ├── Sources/
 │   ├── Core/
 │   │   ├── DebugProbe.swift          # 主入口
-│   │   ├── DebugBridgeClient.swift   # WebSocket 通信
-│   │   ├── DebugEventBus.swift       # 事件总线
-│   │   ├── BreakpointEngine.swift    # 断点引擎
-│   │   ├── ChaosEngine.swift         # 混沌(故障注入)工程引擎
-│   │   └── EventPersistenceQueue.swift # 事件持久化
+│   │   ├── DebugBridgeClient.swift   # WebSocket 通信 + 事件缓冲
+│   │   ├── EventPersistenceQueue.swift # 事件持久化
+│   │   └── Plugin/
+│   │       ├── PluginManager.swift   # 插件管理器
+│   │       ├── EventCallbacks.swift  # 事件回调中心
+│   │       └── PluginBridgeAdapter.swift # 命令路由适配器
+│   ├── Plugins/
+│   │   ├── Engines/
+│   │   │   ├── BreakpointEngine.swift    # 断点引擎
+│   │   │   ├── ChaosEngine.swift         # 故障注入引擎
+│   │   │   └── MockRuleEngine.swift      # Mock 规则引擎
+│   │   ├── NetworkPlugin.swift       # 网络插件
+│   │   ├── LogPlugin.swift           # 日志插件
+│   │   ├── WebSocketPlugin.swift     # WebSocket 插件
+│   │   ├── MockPlugin.swift          # Mock 插件
+│   │   ├── DatabasePlugin.swift      # 数据库插件
+│   │   ├── BreakpointPlugin.swift    # 断点插件
+│   │   └── ChaosPlugin.swift         # Chaos 插件
 │   ├── Network/
-│   │   ├── CaptureURLProtocol.swift  # HTTP 拦截
-│   │   └── WebSocketInterceptor.swift # WebSocket 拦截
-│   ├── Mock/
-│   │   └── MockRuleEngine.swift      # Mock 规则引擎
+│   │   ├── NetworkInstrumentation.swift  # HTTP 拦截基础设施
+│   │   └── WebSocketInstrumentation.swift # WebSocket 拦截基础设施
 │   ├── Log/
-│   │   └── DebugProbeDDLogger.swift  # CocoaLumberjack 集成
+│   │   └── DDLogBridge.swift         # CocoaLumberjack 桥接
 │   ├── Database/
 │   │   └── DatabaseRegistry.swift    # 数据库注册
 │   └── Models/

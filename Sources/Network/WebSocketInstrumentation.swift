@@ -1,8 +1,11 @@
 // WebSocketInstrumentation.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/03.
 // Copyright © 2025 Sun. All rights reserved.
+//
+// WebSocket 连接级别监控基础设施
+// WebSocketPlugin 通过此模块捕获 WebSocket 事件，通过 EventCallbacks 上报
 //
 
 import Foundation
@@ -98,13 +101,14 @@ public final class WebSocketInstrumentation {
 
         // 记录会话创建事件
         let session = WSEvent.Session(
-            id: sessionId,
+            id: info.sessionId,
             url: url.absoluteString,
             requestHeaders: headers,
-            subprotocols: []
+            subprotocols: [],
+            connectTime: info.connectTime
         )
         let event = WSEvent(kind: .sessionCreated(session))
-        DebugEventBus.shared.enqueue(.webSocket(event))
+        EventCallbacks.reportWebSocket(event)
 
         DebugLog.debug(.webSocket, "Connection created: \(url.absoluteString)")
     }
@@ -136,7 +140,7 @@ public final class WebSocketInstrumentation {
         session.closeReason = reason
 
         let event = WSEvent(kind: .sessionClosed(session))
-        DebugEventBus.shared.enqueue(.webSocket(event))
+        EventCallbacks.reportWebSocket(event)
 
         DebugLog.debug(.webSocket, "Connection closed: \(info.url.absoluteString), code: \(closeCode ?? -1)")
     }
@@ -164,7 +168,7 @@ public final class WebSocketInstrumentation {
         )
 
         let event = WSEvent(kind: .frame(frame))
-        DebugEventBus.shared.enqueue(.webSocket(event))
+        EventCallbacks.reportWebSocket(event)
     }
 
     // MARK: - Private - Swizzle

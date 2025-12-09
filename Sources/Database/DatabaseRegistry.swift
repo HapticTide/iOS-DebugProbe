@@ -1,5 +1,5 @@
 // DatabaseRegistry.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/05.
 // Copyright © 2025 Sun. All rights reserved.

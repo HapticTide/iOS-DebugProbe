@@ -1,13 +1,16 @@
 // DebugBridgeClient.swift
-// DebugPlatform
+// DebugProbe
 //
 // Created by Sun on 2025/12/02.
 // Copyright © 2025 Sun. All rights reserved.
 //
+// 负责与 Debug Hub 的 WebSocket 通信
+// 内置事件缓冲，通过 EventCallbacks.onDebugEvent 接收事件
+//
 
 import Foundation
 
-/// Debug Bridge 客户端，负责与 Mac mini Debug Hub 通信
+/// Debug Bridge 客户端，负责与 Debug Hub 通信
 public final class DebugBridgeClient: NSObject {
     // MARK: - Configuration
 
@@ -41,10 +44,23 @@ public final class DebugBridgeClient: NSObject {
         /// 持久化队列配置
         public var persistenceConfig: EventPersistenceQueue.Configuration = .init()
 
+        /// 事件缓冲区最大容量
+        public var maxBufferSize: Int = 10000
+
+        /// 事件丢弃策略
+        public var dropPolicy: DropPolicy = .dropOldest
+
         public init(hubURL: URL, token: String) {
             self.hubURL = hubURL
             self.token = token
         }
+    }
+
+    /// 事件丢弃策略
+    public enum DropPolicy {
+        case dropOldest // 丢弃最旧的事件
+        case dropNewest // 丢弃最新的事件
+        case sample(rate: Double) // 采样保留
     }
 
     // MARK: - State
@@ -74,9 +90,13 @@ public final class DebugBridgeClient: NSObject {
     // MARK: - Callbacks
 
     public var onStateChanged: ((ConnectionState) -> Void)?
-    public var onMockRulesReceived: (([MockRule]) -> Void)?
-    public var onCaptureToggled: ((Bool, Bool, Bool, Bool) -> Void)?
     public var onError: ((Error) -> Void)?
+
+    /// 插件命令回调：(pluginId, command, payload)
+    public var onPluginCommandReceived: ((String, String, [String: Any]?) -> Void)?
+
+    /// Bridge 消息回调（用于插件系统路由）
+    public var onBridgeMessageReceived: ((BridgeMessage) -> Void)?
 
     // MARK: - Private Properties
 
@@ -89,9 +109,12 @@ public final class DebugBridgeClient: NSObject {
     private var recoveryTimer: Timer?
     private let workQueue = DispatchQueue(label: "com.sunimp.debugplatform.bridge", qos: .utility)
     private var isManualDisconnect = false
-    private var eventBusSubscriptionId: String?
     private var isRecovering = false
     private var pendingEventIds: [String] = [] // 正在发送中的事件ID
+
+    /// 事件缓冲区
+    private var eventBuffer: [DebugEvent] = []
+    private let bufferQueue = DispatchQueue(label: "com.sunimp.debugplatform.bridge.buffer", qos: .utility)
 
     /// 重连尝试次数
     private var reconnectAttempts = 0
@@ -173,6 +196,9 @@ public final class DebugBridgeClient: NSObject {
         isManualDisconnect = false
         hasRegistered = false // 重置注册标记
 
+        // 注册事件回调（接收来自插件的事件）
+        registerEventCallback()
+
         // 初始化持久化队列
         if configuration.enablePersistence {
             EventPersistenceQueue.shared.initialize(configuration: configuration.persistenceConfig)
@@ -194,10 +220,8 @@ public final class DebugBridgeClient: NSObject {
     private func internalDisconnect() {
         stopTimers()
 
-        if let subscriptionId = eventBusSubscriptionId {
-            DebugEventBus.shared.unsubscribe(id: subscriptionId)
-            eventBusSubscriptionId = nil
-        }
+        // 注销事件回调
+        EventCallbacks.onDebugEvent = nil
 
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         webSocketTask = nil
@@ -259,51 +283,33 @@ public final class DebugBridgeClient: NSObject {
                 startRecovery()
             }
 
-        case let .toggleCapture(network, log, websocket, database):
-            DispatchQueue.main.async { [weak self] in
-                self?.onCaptureToggled?(network, log, websocket, database)
-            }
-
-        case let .updateMockRules(rules):
-            DispatchQueue.main.async { [weak self] in
-                self?.onMockRulesReceived?(rules)
-            }
-
-        case let .updateBreakpointRules(rules):
-            DebugLog.info(.bridge, "Received \(rules.count) breakpoint rules")
-            // 更新断点引擎规则
-            BreakpointEngine.shared.updateRules(rules)
-
-        case let .updateChaosRules(rules):
-            DebugLog.info(.bridge, "Received \(rules.count) chaos rules")
-            // 更新故障注入引擎规则
-            ChaosEngine.shared.updateRules(rules)
-
         case let .replayRequest(payload):
             DebugLog.info(.bridge, "Received replay request for \(payload.url)")
             executeReplayRequest(payload)
 
-        case let .breakpointResume(payload):
-            DebugLog.info(.bridge, "Received breakpoint resume for \(payload.requestId)")
-            // 恢复断点
-            Task {
-                await BreakpointEngine.shared.resumeBreakpoint(
-                    requestId: payload.requestId,
-                    action: mapBreakpointAction(payload)
-                )
+        case let .pluginCommand(command):
+            DebugLog.info(.bridge, "Received plugin command: \(command.commandType) for plugin: \(command.pluginId)")
+            // 解析 payload 为字典
+            var payloadDict: [String: Any]?
+            if
+                let payloadData = command.payload,
+                let dict = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] {
+                payloadDict = dict
             }
-
-        case let .dbCommand(command):
-            DebugLog.info(.bridge, "Received DB command: \(command.kind.rawValue)")
-            handleDBCommand(command)
+            DispatchQueue.main.async { [weak self] in
+                self?.onPluginCommandReceived?(command.pluginId, command.commandType, payloadDict)
+            }
 
         case let .error(code, errorMessage):
             let error = NSError(domain: "DebugBridge", code: code, userInfo: [NSLocalizedDescriptionKey: errorMessage])
             handleError(error)
 
         default:
-            // 其他消息类型（如 register, heartbeat, events 等是发送消息，不应接收）
-            break
+            // 所有其他消息类型（toggleCapture, updateMockRules, updateBreakpointRules,
+            // updateChaosRules, breakpointResume, dbCommand 等）都通过插件系统路由
+            DispatchQueue.main.async { [weak self] in
+                self?.onBridgeMessageReceived?(message)
+            }
         }
     }
 
@@ -343,124 +349,6 @@ public final class DebugBridgeClient: NSObject {
             // 可选：发送重放结果回服务端
             // self?.sendReplayResult(id: payload.id, response: response, data: data, error: error)
         }.resume()
-    }
-
-    /// 将 BreakpointResumePayload 转换为 BreakpointAction
-    private func mapBreakpointAction(_ payload: BreakpointResumePayload) -> BreakpointAction {
-        switch payload.action.lowercased() {
-        case "continue", "resume":
-            return .resume
-        case "abort":
-            return .abort
-        case "modify":
-            // 处理修改请求
-            if let mod = payload.modifiedRequest {
-                let request = BreakpointRequestSnapshot(
-                    method: mod.method ?? "GET",
-                    url: mod.url ?? "",
-                    headers: mod.headers ?? [:],
-                    body: mod.bodyData
-                )
-                return .modify(BreakpointModification(request: request, response: nil))
-            }
-            // 处理修改响应
-            if let mod = payload.modifiedResponse {
-                let response = BreakpointResponseSnapshot(
-                    statusCode: mod.statusCode ?? 200,
-                    headers: mod.headers ?? [:],
-                    body: mod.bodyData
-                )
-                return .modify(BreakpointModification(request: nil, response: response))
-            }
-            return .resume
-        case "mockresponse":
-            // 处理 Mock 响应
-            if let mod = payload.modifiedResponse {
-                let response = BreakpointResponseSnapshot(
-                    statusCode: mod.statusCode ?? 200,
-                    headers: mod.headers ?? [:],
-                    body: mod.bodyData
-                )
-                return .mockResponse(response)
-            }
-            return .resume
-        default:
-            return .resume
-        }
-    }
-
-    // MARK: - DB Inspector Commands
-
-    /// 处理数据库检查命令
-    private func handleDBCommand(_ command: DBCommand) {
-        Task {
-            let response = await executeDBCommand(command)
-            send(.dbResponse(response))
-        }
-    }
-
-    /// 执行数据库命令并返回响应
-    private func executeDBCommand(_ command: DBCommand) async -> DBResponse {
-        let inspector = SQLiteInspector.shared
-
-        do {
-            switch command.kind {
-            case .listDatabases:
-                let databases = try await inspector.listDatabases()
-                let payload = DBListDatabasesResponse(databases: databases)
-                return try DBResponse.success(requestId: command.requestId, data: payload)
-
-            case .listTables:
-                guard let dbId = command.dbId else {
-                    return DBResponse.failure(requestId: command.requestId, error: .invalidQuery("dbId is required"))
-                }
-                let tables = try await inspector.listTables(dbId: dbId)
-                let payload = DBListTablesResponse(dbId: dbId, tables: tables)
-                return try DBResponse.success(requestId: command.requestId, data: payload)
-
-            case .describeTable:
-                guard let dbId = command.dbId, let table = command.table else {
-                    return DBResponse.failure(
-                        requestId: command.requestId,
-                        error: .invalidQuery("dbId and table are required")
-                    )
-                }
-                let columns = try await inspector.describeTable(dbId: dbId, table: table)
-                let payload = DBDescribeTableResponse(dbId: dbId, table: table, columns: columns)
-                return try DBResponse.success(requestId: command.requestId, data: payload)
-
-            case .fetchTablePage:
-                guard let dbId = command.dbId, let table = command.table else {
-                    return DBResponse.failure(
-                        requestId: command.requestId,
-                        error: .invalidQuery("dbId and table are required")
-                    )
-                }
-                let result = try await inspector.fetchTablePage(
-                    dbId: dbId,
-                    table: table,
-                    page: command.page ?? 1,
-                    pageSize: command.pageSize ?? 50,
-                    orderBy: command.orderBy,
-                    ascending: command.ascending ?? true
-                )
-                return try DBResponse.success(requestId: command.requestId, data: result)
-
-            case .executeQuery:
-                guard let dbId = command.dbId, let query = command.query else {
-                    return DBResponse.failure(
-                        requestId: command.requestId,
-                        error: .invalidQuery("dbId and query are required")
-                    )
-                }
-                let result = try await inspector.executeQuery(dbId: dbId, query: query)
-                return try DBResponse.success(requestId: command.requestId, data: result)
-            }
-        } catch let error as DBInspectorError {
-            return DBResponse.failure(requestId: command.requestId, error: error)
-        } catch {
-            return DBResponse.failure(requestId: command.requestId, error: .internalError(error.localizedDescription))
-        }
     }
 
     private func handleError(_ error: Error) {
@@ -515,21 +403,7 @@ public final class DebugBridgeClient: NSObject {
         }
         hasRegistered = true
 
-        #if canImport(UIKit)
-            let deviceInfo = DeviceInfo.current()
-        #else
-            let deviceInfo = DeviceInfo(
-                deviceId: UUID().uuidString,
-                deviceName: Host.current().localizedName ?? "Unknown",
-                deviceModel: DeviceInfo.macDeviceModel(),
-                systemName: "macOS",
-                systemVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-                appName: "Debug Client",
-                appVersion: "1.0.0",
-                buildNumber: "1"
-            )
-        #endif
-
+        let deviceInfo = DeviceInfoProvider.current()
         DebugLog.debug(.bridge, "Sending register request for device: \(deviceInfo.deviceId)")
         send(.register(deviceInfo, token: configuration.token))
     }
@@ -544,7 +418,11 @@ public final class DebugBridgeClient: NSObject {
         guard let configuration else { return }
         guard !isFlushing else { return }
 
-        let events = DebugEventBus.shared.peek(count: configuration.batchSize)
+        // 从内置缓冲区获取事件
+        var events: [DebugEvent] = []
+        bufferQueue.sync {
+            events = Array(eventBuffer.prefix(configuration.batchSize))
+        }
         guard !events.isEmpty else { return }
 
         // 如果已连接，直接发送
@@ -555,7 +433,11 @@ public final class DebugBridgeClient: NSObject {
             send(.events(events)) { [weak self] error in
                 guard let self else { return }
                 if error == nil {
-                    DebugEventBus.shared.removeFirst(events.count)
+                    // 成功发送，从缓冲区移除
+                    bufferQueue.async {
+                        let removeCount = min(events.count, self.eventBuffer.count)
+                        self.eventBuffer.removeFirst(removeCount)
+                    }
                 } else {
                     DebugLog.error(.bridge, "Failed to flush events, keeping in queue")
                 }
@@ -568,13 +450,89 @@ public final class DebugBridgeClient: NSObject {
             DebugLog.debug(.bridge, "Not registered (state=\(state)), events pending: \(events.count)")
             if configuration.enablePersistence {
                 // 未连接时，将事件存入持久化队列
-                // 注意：这里假设持久化是可靠的，所以直接取出并保存
-                let eventsToSave = DebugEventBus.shared.dequeueAll()
+                var eventsToSave: [DebugEvent] = []
+                bufferQueue.sync {
+                    eventsToSave = eventBuffer
+                    eventBuffer.removeAll()
+                }
                 if !eventsToSave.isEmpty {
                     EventPersistenceQueue.shared.enqueue(eventsToSave)
                     DebugLog.debug(.persistence, "Persisted \(eventsToSave.count) events (offline)")
                 }
             }
+        }
+    }
+
+    // MARK: - Event Buffer Management
+
+    /// 注册事件回调
+    /// 插件通过 EventCallbacks.reportEvent() 发送事件
+    private func registerEventCallback() {
+        EventCallbacks.onDebugEvent = { [weak self] event in
+            self?.enqueueEvent(event)
+        }
+    }
+
+    /// 入队一个调试事件
+    private func enqueueEvent(_ event: DebugEvent) {
+        guard let configuration else { return }
+
+        bufferQueue.async { [weak self] in
+            guard let self else { return }
+
+            // 检查缓冲区是否已满
+            if eventBuffer.count >= configuration.maxBufferSize {
+                switch configuration.dropPolicy {
+                case .dropOldest:
+                    eventBuffer.removeFirst()
+                case .dropNewest:
+                    return // 不添加新事件
+                case let .sample(rate):
+                    // rate 表示保留率：rate=0.8 意味着保留 80% 的事件
+                    if Double.random(in: 0...1) > rate {
+                        return // 不满足采样条件，丢弃此事件
+                    }
+                    if eventBuffer.count >= configuration.maxBufferSize {
+                        eventBuffer.removeFirst()
+                    }
+                }
+            }
+
+            eventBuffer.append(event)
+
+            // 打印事件入队日志（便于调试）
+            switch event {
+            case let .http(httpEvent):
+                DebugLog.debug(
+                    .bridge,
+                    "Event queued: HTTP \(httpEvent.request.method) \(httpEvent.request.url.prefix(80))... (buffer: \(eventBuffer.count))"
+                )
+            case let .log(logEvent):
+                DebugLog.debug(
+                    .bridge,
+                    "Event queued: Log [\(logEvent.level)] \(logEvent.message.prefix(50))... (buffer: \(eventBuffer.count))"
+                )
+            case let .webSocket(wsEvent):
+                DebugLog.debug(.bridge, "Event queued: WebSocket \(wsEvent) (buffer: \(eventBuffer.count))")
+            case .stats:
+                DebugLog.debug(.bridge, "Event queued: Stats (buffer: \(eventBuffer.count))")
+            }
+        }
+    }
+
+    /// 获取当前缓冲区大小
+    public var bufferCount: Int {
+        var count = 0
+        bufferQueue.sync {
+            count = eventBuffer.count
+        }
+        return count
+    }
+
+    /// 清空缓冲区
+    public func clearBuffer() {
+        bufferQueue.async { [weak self] in
+            self?.eventBuffer.removeAll()
         }
     }
 
