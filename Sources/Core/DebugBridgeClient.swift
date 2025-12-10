@@ -374,6 +374,16 @@ public final class DebugBridgeClient: NSObject {
         send(.breakpointHit(hit))
     }
 
+    /// 发送数据库响应
+    public func sendDBResponse(_ response: DBResponse) {
+        send(.dbResponse(response))
+    }
+
+    /// 发送插件事件
+    public func sendPluginEvent(_ event: PluginEvent) {
+        send(.pluginEvent(event))
+    }
+
     private func send(_ message: BridgeMessage, completion: ((Error?) -> Void)? = nil) {
         do {
             let encoder = JSONEncoder()

@@ -121,6 +121,9 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
         case "get_status":
             await handleGetStatus(command)
 
+        case "replay":
+            await handleReplay(command)
+
         default:
             sendErrorResponse(for: command, message: "Unknown command type: \(command.commandType)")
         }
@@ -266,6 +269,56 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
         }
     }
 
+    /// 处理重放请求命令
+    private func handleReplay(_ command: PluginCommand) async {
+        guard let payload = command.payload else {
+            sendErrorResponse(for: command, message: "Missing payload")
+            return
+        }
+
+        do {
+            let replayData = try JSONDecoder().decode(ReplayPayload.self, from: payload)
+
+            guard let url = URL(string: replayData.url) else {
+                sendErrorResponse(for: command, message: "Invalid URL: \(replayData.url)")
+                return
+            }
+
+            var request = URLRequest(url: url)
+            request.httpMethod = replayData.method
+
+            // 设置请求头
+            for (key, value) in replayData.headers {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
+
+            // 设置请求体
+            request.httpBody = replayData.body
+
+            // 使用非监控的 session 执行请求，避免重放请求也被记录
+            let session = URLSession(configuration: .ephemeral)
+
+            context?.logInfo("Executing replay request: \(replayData.method) \(replayData.url)")
+
+            session.dataTask(with: request) { [weak self] _, response, error in
+                guard let self else { return }
+
+                if let error {
+                    self.context?.logError("Replay request failed: \(error.localizedDescription)")
+                    return
+                }
+
+                if let httpResponse = response as? HTTPURLResponse {
+                    self.context?.logInfo("Replay request completed: \(httpResponse.statusCode)")
+                }
+            }.resume()
+
+            sendSuccessResponse(for: command)
+        } catch {
+            sendErrorResponse(for: command, message: "Failed to decode replay payload: \(error)")
+        }
+    }
+
     // MARK: - Response Helpers
 
     private func sendSuccessResponse(for command: PluginCommand) {
@@ -302,4 +355,12 @@ struct NetworkPluginStatus: Codable {
     let captureMode: String
     let httpOnly: Bool
     let state: String
+}
+
+/// 重放请求负载
+struct ReplayPayload: Codable {
+    let url: String
+    let method: String
+    let headers: [String: String]
+    let body: Data?
 }

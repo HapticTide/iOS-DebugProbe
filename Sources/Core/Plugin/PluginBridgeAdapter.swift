@@ -115,19 +115,38 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
     }
 
     /// 发送通用插件事件
-    /// 用于处理自定义插件的事件，如需要可扩展为新的 BridgeMessage 类型
+    /// 用于处理自定义插件的事件，发送到 Hub
     private func sendGenericPluginEvent(_ event: PluginEvent) {
-        DebugLog.debug(.plugin, "Generic plugin event: \(event.pluginId)/\(event.eventType)")
-        // TODO: 未来可以扩展为 BridgeMessage.pluginEvent 类型发送到 Hub
+        DebugLog.debug(.plugin, "Sending plugin event: \(event.pluginId)/\(event.eventType)")
+        bridgeClient?.sendPluginEvent(event)
     }
 
     /// 处理插件命令响应
     private func handlePluginCommandResponse(_ response: PluginCommandResponse) {
-        // 发送响应到服务端
         DebugLog.debug(
             .plugin,
             "Plugin command response: \(response.pluginId), success: \(response.success)"
         )
+
+        // 根据插件类型发送对应的 BridgeMessage 响应
+        switch response.pluginId {
+        case BuiltinPluginId.database:
+            // 数据库插件响应需要解码 payload 并发送 BridgeMessage.dbResponse
+            guard let payload = response.payload else {
+                DebugLog.warning(.plugin, "Database response missing payload")
+                return
+            }
+            do {
+                let dbResponse = try JSONDecoder().decode(DBResponse.self, from: payload)
+                bridgeClient?.sendDBResponse(dbResponse)
+            } catch {
+                DebugLog.error(.plugin, "Failed to decode DB response: \(error)")
+            }
+
+        default:
+            // 其他插件响应暂时只记录日志
+            break
+        }
     }
 
     // MARK: - Command Routing
