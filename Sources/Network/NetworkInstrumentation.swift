@@ -463,13 +463,17 @@ public final class CaptureURLProtocol: URLProtocol {
         // 构建性能时间线
         let timing = extractTiming(from: taskMetrics)
 
+        // 检测是否为重放请求
+        let isReplay = request.value(forHTTPHeaderField: HTTPEvent.replayHeaderKey) == "true"
+
         // 创建事件并上报
         let event = HTTPEvent(
             request: httpRequest,
             response: httpResponse,
             timing: timing,
             isMocked: isMocked,
-            mockRuleId: mockRuleId
+            mockRuleId: mockRuleId,
+            isReplay: isReplay
         )
 
         EventCallbacks.reportHTTP(event)

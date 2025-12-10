@@ -281,12 +281,15 @@ public final class DebugProbe {
 
     /// 获取用于注入到宿主 App 的 WebSocket 调试钩子
     ///
+    /// 这些钩子使用延迟绑定，即使在 DebugProbe.start() 之前调用也能正常工作。
+    /// 当实际调用钩子时，会动态查找 WebSocketPlugin 并转发事件。
+    ///
     /// 使用方式（在 AppDelegate/SceneDelegate 中）：
     /// ```swift
     /// #if !APPSTORE
     /// import DebugProbe
     ///
-    /// // 在 setupDebugProbe() 中设置钩子
+    /// // 可以在 DebugProbe.start() 之前设置钩子
     /// let hooks = DebugProbe.shared.getWebSocketHooks()
     /// WebSocketDebugHooks.onSessionCreated = hooks.onSessionCreated
     /// WebSocketDebugHooks.onSessionClosed = hooks.onSessionClosed
@@ -300,17 +303,41 @@ public final class DebugProbe {
         onMessageSent: WSMessageHook,
         onMessageReceived: WSMessageHook
     ) {
-        // 代理到 WebSocketPlugin
-        guard let wsPlugin = pluginManager.getPlugin(pluginId: BuiltinPluginId.webSocket) as? WebSocketPlugin else {
-            // 如果插件未注册，返回空操作
-            return (
-                onSessionCreated: { _, _, _ in },
-                onSessionClosed: { _, _, _ in },
-                onMessageSent: { _, _ in },
-                onMessageReceived: { _, _ in }
-            )
+        // 使用延迟绑定：返回的闭包在调用时动态查找 WebSocketPlugin
+        // 这样即使在 DebugProbe.start() 之前设置钩子也能正常工作
+        let onSessionCreated: WSSessionCreatedHook = { [weak self] sessionId, url, headers in
+            guard let wsPlugin = self?.pluginManager.getPlugin(pluginId: BuiltinPluginId.webSocket) as? WebSocketPlugin
+            else {
+                return
+            }
+            wsPlugin.getHooks().onSessionCreated(sessionId, url, headers)
         }
-        return wsPlugin.getHooks()
+
+        let onSessionClosed: WSSessionClosedHook = { [weak self] sessionId, closeCode, reason in
+            guard let wsPlugin = self?.pluginManager.getPlugin(pluginId: BuiltinPluginId.webSocket) as? WebSocketPlugin
+            else {
+                return
+            }
+            wsPlugin.getHooks().onSessionClosed(sessionId, closeCode, reason)
+        }
+
+        let onMessageSent: WSMessageHook = { [weak self] sessionId, data in
+            guard let wsPlugin = self?.pluginManager.getPlugin(pluginId: BuiltinPluginId.webSocket) as? WebSocketPlugin
+            else {
+                return
+            }
+            wsPlugin.getHooks().onMessageSent(sessionId, data)
+        }
+
+        let onMessageReceived: WSMessageHook = { [weak self] sessionId, data in
+            guard let wsPlugin = self?.pluginManager.getPlugin(pluginId: BuiltinPluginId.webSocket) as? WebSocketPlugin
+            else {
+                return
+            }
+            wsPlugin.getHooks().onMessageReceived(sessionId, data)
+        }
+
+        return (onSessionCreated, onSessionClosed, onMessageSent, onMessageReceived)
     }
 
     // MARK: - Manual Event Submission

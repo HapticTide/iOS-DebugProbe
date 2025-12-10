@@ -292,14 +292,16 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
                 request.setValue(value, forHTTPHeaderField: key)
             }
 
+            // 添加重放标记头，让捕获系统识别这是重放请求
+            request.setValue("true", forHTTPHeaderField: "X-DebugProbe-Replay")
+
             // 设置请求体
             request.httpBody = replayData.body
 
-            // 使用非监控的 session 执行请求，避免重放请求也被记录
-            let session = URLSession(configuration: .ephemeral)
-
             context?.logInfo("Executing replay request: \(replayData.method) \(replayData.url)")
-
+            // 使用 default configuration 创建 session，确保请求被 CaptureURLProtocol 捕获
+            // 注意：不能使用 URLSession.shared，因为它的 configuration 可能不包含 CaptureURLProtocol
+            let session = URLSession(configuration: .default)
             session.dataTask(with: request) { [weak self] _, response, error in
                 guard let self else { return }
 

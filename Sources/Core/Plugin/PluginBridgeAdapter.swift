@@ -50,12 +50,12 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
         }
 
         // 订阅 BridgeClient 的命令回调
-        bridgeClient?.onPluginCommandReceived = { [weak self] pluginId, commandType, payloadDict in
+        bridgeClient?.onPluginCommandReceived = { [weak self] pluginId, commandType, payloadObject in
             Task {
                 // 将参数转换为 PluginCommand
                 var payload: Data?
-                if let payloadDict {
-                    payload = try? JSONSerialization.data(withJSONObject: payloadDict)
+                if let payloadObject {
+                    payload = try? JSONSerialization.data(withJSONObject: payloadObject)
                 }
                 let command = PluginCommand(
                     pluginId: pluginId,

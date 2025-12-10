@@ -154,24 +154,30 @@ public struct HTTPEvent: Codable {
         }
     }
 
+    /// 重放标记 header 名称
+    public static let replayHeaderKey = "X-DebugProbe-Replay"
+
     public let request: Request
     public var response: Response?
     public let timing: Timing?
     public let isMocked: Bool
     public let mockRuleId: String?
+    public let isReplay: Bool
 
     public init(
         request: Request,
         response: Response? = nil,
         timing: Timing? = nil,
         isMocked: Bool = false,
-        mockRuleId: String? = nil
+        mockRuleId: String? = nil,
+        isReplay: Bool = false
     ) {
         self.request = request
         self.response = response
         self.timing = timing
         self.isMocked = isMocked
         self.mockRuleId = mockRuleId
+        self.isReplay = isReplay
     }
 }
 

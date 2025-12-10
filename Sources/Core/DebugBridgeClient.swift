@@ -93,7 +93,8 @@ public final class DebugBridgeClient: NSObject {
     public var onError: ((Error) -> Void)?
 
     /// 插件命令回调：(pluginId, command, payload)
-    public var onPluginCommandReceived: ((String, String, [String: Any]?) -> Void)?
+    /// payload 可以是字典 [String: Any] 或数组 [[String: Any]] 等任意 JSON 对象
+    public var onPluginCommandReceived: ((String, String, Any?) -> Void)?
 
     /// Bridge 消息回调（用于插件系统路由）
     public var onBridgeMessageReceived: ((BridgeMessage) -> Void)?
@@ -289,15 +290,15 @@ public final class DebugBridgeClient: NSObject {
 
         case let .pluginCommand(command):
             DebugLog.info(.bridge, "Received plugin command: \(command.commandType) for plugin: \(command.pluginId)")
-            // 解析 payload 为字典
-            var payloadDict: [String: Any]?
+            // 解析 payload 为 JSON 对象（可能是字典或数组）
+            var payloadObject: Any?
             if
                 let payloadData = command.payload,
-                let dict = try? JSONSerialization.jsonObject(with: payloadData) as? [String: Any] {
-                payloadDict = dict
+                let object = try? JSONSerialization.jsonObject(with: payloadData) {
+                payloadObject = object
             }
             DispatchQueue.main.async { [weak self] in
-                self?.onPluginCommandReceived?(command.pluginId, command.commandType, payloadDict)
+                self?.onPluginCommandReceived?(command.pluginId, command.commandType, payloadObject)
             }
 
         case let .error(code, errorMessage):
