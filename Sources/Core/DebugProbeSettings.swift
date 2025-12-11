@@ -30,10 +30,8 @@ public final class DebugProbeSettings {
     public static var defaultHost = "127.0.0.1"
     /// 默认端口 (可配置)
     public static var defaultPort = 8081
-
-    private enum Defaults {
-        static let token = "debug-token-2025"
-    }
+    /// 默认 Token (可配置)
+    public static var defaultToken = "debug-token-2025"
 
     // MARK: - Properties
 
@@ -97,7 +95,7 @@ public final class DebugProbeSettings {
             if let plistValue = Bundle.main.infoDictionary?["DEBUGHUB_TOKEN"] as? String, !plistValue.isEmpty {
                 return plistValue
             }
-            return Defaults.token
+            return Self.defaultToken
         }
         set {
             userDefaults.set(newValue, forKey: Keys.token)

@@ -191,15 +191,29 @@ public final class WebSocketPlugin: DebugProbePlugin, @unchecked Sendable {
     }
 
     /// 处理 WebSocket 事件
-    /// - Parameter wsEvent: 从 WebSocketInstrumentation 捕获的 WebSocket 事件
+    /// - Parameter wsEvent: 从 WebSocketInstrumentation 或 InstrumentedWebSocketClient 捕获的 WebSocket 事件
+    ///
+    /// 事件来源：
+    /// - WebSocketInstrumentation: 自动捕获的连接级别事件（连接创建/关闭）
+    /// - InstrumentedWebSocketClient: 完整的消息级别事件（帧发送/接收）
+    ///
+    /// 注意：不要在此处再调用 reportWSEvent，否则会导致重复发送。
+    /// EventCallbacks.reportEvent 已经会将事件发送到 BridgeClient。
     private func handleWebSocketEvent(_ wsEvent: WSEvent) {
         guard isEnabled else { return }
 
-        // 1. 通过统一回调发送到 BridgeClient
-        EventCallbacks.reportEvent(.webSocket(wsEvent))
+        // 更新会话缓存
+        switch wsEvent.kind {
+        case let .sessionCreated(session):
+            cacheLock.lock()
+            sessionURLCache[session.id] = session.url
+            cacheLock.unlock()
+        case .sessionClosed, .frame:
+            break
+        }
 
-        // 2. 上报插件事件（用于插件系统内部状态管理）
-        reportWSEvent(wsEvent)
+        // 通过统一回调发送到 BridgeClient（只发送一次）
+        EventCallbacks.reportEvent(.webSocket(wsEvent))
     }
 
     private func handleSessionCreated(sessionId: String, url: String, headers: [String: String]) {

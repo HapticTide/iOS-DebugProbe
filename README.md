@@ -6,7 +6,7 @@
 >
 > **本项目全部代码和文档均由 Agent AI 生成**
 
-> **当前版本**: v1.4.0 | **最后更新**: 2025-12-11
+> **当前版本**: v1.5.0 | **最后更新**: 2025-12-11
 
 ## 功能特性
 
@@ -51,7 +51,7 @@
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/sunimp/iOS-DebugProbe.git", from: "1.4.0")
+    .package(url: "https://github.com/example/DebugProbe.git", from: "1.5.0")
 ]
 ```
 
@@ -62,7 +62,7 @@ dependencies: [
 
 ## 快速开始
 
-### 1. 初始化
+### 1. 最简启动（推荐）
 
 ```swift
 import DebugProbe
@@ -71,38 +71,75 @@ import DebugProbe
 func application(_ application: UIApplication, didFinishLaunchingWithOptions...) -> Bool {
     
     #if DEBUG
-    let config = DebugProbe.Configuration(
-        hubURL: URL(string: "ws://127.0.0.1:8081/debug-bridge")!,
-        token: "your-device-token"
-    )
-    DebugProbe.shared.start(configuration: config)
+    // 自动从 DebugProbeSettings 读取配置（hubHost, hubPort, token）
+    DebugProbe.shared.start()
     #endif
     
     return true
 }
 ```
 
-### 2. 配置选项
+### 2. 配置 DebugProbeSettings（可选）
+
+`DebugProbeSettings` 是 SDK 的配置管理中心，支持多层配置优先级：**运行时配置 > Info.plist > 默认值**
 
 ```swift
+// 方式一：在代码中设置默认值（适合打包时配置）
+DebugProbeSettings.defaultHost = "192.168.1.100"  // 默认 "127.0.0.1"
+DebugProbeSettings.defaultPort = 8081             // 默认 8081
+
+// 方式二：运行时配置（会持久化到 UserDefaults）
+DebugProbeSettings.shared.configure(
+    host: "192.168.1.100",
+    port: 8081,
+    token: "my-token"
+)
+
+// 方式三：通过 Info.plist 配置
+// DEBUGHUB_HOST = "192.168.1.100"
+// DEBUGHUB_PORT = 8081
+// DEBUGHUB_TOKEN = "my-token"
+```
+
+### 3. 配置变更自动重连
+
+```swift
+// 监听配置变更通知
+NotificationCenter.default.addObserver(
+    forName: DebugProbeSettings.configurationDidChangeNotification,
+    object: nil,
+    queue: .main
+) { _ in
+    // 自动从 DebugProbeSettings 读取新配置并重连
+    DebugProbe.shared.reconnect()
+}
+```
+
+### 4. 自定义启动参数
+
+```swift
+#if DEBUG
+// 如需自定义网络捕获等参数
+DebugProbe.shared.start(
+    networkCaptureMode: .automatic,   // .automatic (推荐) 或 .manual
+    networkCaptureScope: .all,        // .all, .http, 或 .webSocket
+    enableLogCapture: true,
+    enablePersistence: true
+)
+#endif
+```
+
+### 5. 高级：使用自定义 Configuration
+
+```swift
+// 如需完全控制配置（不推荐，除非有特殊需求）
 var config = DebugProbe.Configuration(
     hubURL: URL(string: "ws://localhost:8081/debug-bridge")!,
     token: "device-token"
 )
-
-// 网络捕获模式（默认自动）
-config.networkCaptureMode = .automatic  // 自动拦截所有请求
-// config.networkCaptureMode = .manual  // 手动注入 protocolClasses
-
-// 网络捕获范围
-config.networkCaptureScope = .all       // HTTP + WebSocket
-// config.networkCaptureScope = .http   // 仅 HTTP
-// config.networkCaptureScope = .webSocket // 仅 WebSocket
-
-// 日志捕获
+config.networkCaptureMode = .automatic
+config.networkCaptureScope = .all
 config.enableLogCapture = true
-
-// 持久化（断线重连后恢复发送）
 config.enablePersistence = true
 config.maxPersistenceQueueSize = 100_000
 config.persistenceRetentionDays = 3
@@ -110,21 +147,25 @@ config.persistenceRetentionDays = 3
 DebugProbe.shared.start(configuration: config)
 ```
 
-### 3. 注册数据库（可选）
+### 6. 注册数据库（可选）
 
 ```swift
 import DebugProbe
 
 // 注册要检查的数据库
 DatabaseRegistry.shared.register(
-    path: databasePath,
+    id: "main-db",
     name: "MyDatabase",
-    kind: .main,
+    url: databaseURL,
+    kind: "main",
     isSensitive: false
 )
+
+// 或自动发现目录下的所有 SQLite 数据库
+DatabaseRegistry.shared.autoDiscover(in: documentsURL)
 ```
 
-### 4. 自定义日志（可选）
+### 7. 自定义日志（可选）
 
 ```swift
 // 发送自定义调试日志
@@ -134,7 +175,44 @@ DebugProbe.shared.log(
     subsystem: "Auth",
     category: "Login"
 )
+
+// 便捷方法
+DebugProbe.shared.debug("调试信息")
+DebugProbe.shared.info("普通信息")
+DebugProbe.shared.warning("警告信息")
+DebugProbe.shared.error("错误信息")
 ```
+
+## API 概览
+
+### DebugProbe
+
+| 方法 | 说明 |
+|------|------|
+| `start()` | 使用 DebugProbeSettings 配置启动（推荐） |
+| `start(configuration:)` | 使用自定义 Configuration 启动 |
+| `stop()` | 停止 DebugProbe |
+| `reconnect()` | 使用 DebugProbeSettings 配置重连（推荐） |
+| `reconnect(hubURL:token:)` | 使用指定 URL 和 Token 重连 |
+| `retryConnection()` | 手动重试连接（用于连接失败后） |
+| `isStarted` | 是否已启动 |
+| `connectionState` | 当前连接状态 |
+
+### DebugProbeSettings
+
+| 属性/方法 | 说明 |
+|----------|------|
+| `hubHost` | Hub 主机地址 |
+| `hubPort` | Hub 端口 |
+| `token` | 认证 Token |
+| `hubURL` | 完整的 WebSocket URL |
+| `isEnabled` | 是否启用 DebugProbe |
+| `verboseLogging` | 是否启用详细日志 |
+| `configure(host:port:token:)` | 快速配置 |
+| `configure(from: URL)` | 从 URL 解析配置（如扫码） |
+| `resetToDefaults()` | 重置为默认值 |
+| `connectionStatusDetail` | 连接状态详情 |
+| `configurationDidChangeNotification` | 配置变更通知 |
 
 ## 架构
 
@@ -228,11 +306,33 @@ DebugProbe/
 
 ## 与 DebugHub 配合使用
 
-DebugProbe 需要配合 [DebugHub](https://github.com/sunimp/DebugPlatform) 服务端使用：
+DebugProbe 需要配合 [DebugHub](https://github.com/example/DebugPlatform) 服务端使用：
 
 1. 启动 DebugHub 服务器
 2. 在 iOS App 中配置 DebugProbe 连接到 DebugHub
 3. 打开 Web UI (http://localhost:8081) 查看调试信息
+
+## Demo 工程
+
+项目包含完整的 Demo 工程，演示所有功能模块的使用方法：
+
+```bash
+# Demo 工程位置
+DebugProbe/Demo/DebugProbeDemo/
+
+# 使用 Xcode 打开
+open Demo/DebugProbeDemo/DebugProbeDemo.xcodeproj
+```
+
+Demo 包含以下功能演示：
+- **HTTP 请求** - GET/POST/PUT/DELETE/文件上传/并发请求
+- **WebSocket** - 连接管理、消息收发
+- **日志系统** - 多级别日志发送
+- **数据库** - SQLite CRUD 操作
+- **Mock 规则** - API Mock 配置
+- **设置** - DebugHub 连接配置
+
+详见 [Demo README](Demo/README.md)
 
 ## 要求
 

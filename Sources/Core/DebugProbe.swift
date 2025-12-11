@@ -109,7 +109,58 @@ public final class DebugProbe {
 
     // MARK: - Start / Stop
 
-    /// 启动 Debug Probe
+    /// 使用 DebugProbeSettings 中的配置启动 DebugProbe（推荐方式）
+    ///
+    /// 这是最简单的启动方式，自动从 `DebugProbeSettings.shared` 读取配置。
+    /// 配置可通过以下方式设置：
+    /// - Info.plist（DEBUGHUB_HOST, DEBUGHUB_PORT, DEBUGHUB_TOKEN）
+    /// - 运行时修改 `DebugProbeSettings.shared.hubHost` 等属性
+    /// - 调用 `DebugProbeSettings.shared.configure(host:port:token:)`
+    ///
+    /// 使用示例：
+    /// ```swift
+    /// // 简单启动（使用默认配置）
+    /// DebugProbe.shared.start()
+    ///
+    /// // 或先修改配置再启动
+    /// DebugProbeSettings.shared.configure(host: "192.168.1.100", port: 8081)
+    /// DebugProbe.shared.start()
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - networkCaptureMode: 网络捕获模式，默认 `.automatic`
+    ///   - networkCaptureScope: 网络捕获范围，默认 `.all`
+    ///   - enableLogCapture: 是否启用日志捕获，默认 `true`
+    ///   - enablePersistence: 是否启用持久化，默认 `true`
+    public func start(
+        networkCaptureMode: NetworkCaptureMode = .automatic,
+        networkCaptureScope: NetworkCaptureScope = .all,
+        enableLogCapture: Bool = true,
+        enablePersistence: Bool = true
+    ) {
+        let settings = DebugProbeSettings.shared
+
+        // 检查是否禁用
+        guard settings.isEnabled else {
+            DebugLog.debug("DebugProbe is disabled by settings")
+            return
+        }
+
+        var config = Configuration(
+            hubURL: settings.hubURL,
+            token: settings.token
+        )
+        config.networkCaptureMode = networkCaptureMode
+        config.networkCaptureScope = networkCaptureScope
+        config.enableLogCapture = enableLogCapture
+        config.enablePersistence = enablePersistence
+
+        start(configuration: config)
+    }
+
+    /// 启动 Debug Probe（使用自定义配置）
+    ///
+    /// 用于需要完全控制配置的高级场景。大多数情况下推荐使用无参数的 `start()` 方法。
     public func start(configuration: Configuration) {
         guard !isStarted else {
             DebugLog.debug("Already started")
@@ -182,6 +233,41 @@ public final class DebugProbe {
 
         DebugLog.info("Manual retry connection requested")
         bridgeClient.retry()
+    }
+
+    /// 使用 DebugProbeSettings 中的配置重新连接（推荐方式）
+    ///
+    /// 当用户在设置界面修改了 hubHost/hubPort/token 后，调用此方法重新连接。
+    /// 自动从 `DebugProbeSettings.shared` 读取最新配置。
+    ///
+    /// 使用示例：
+    /// ```swift
+    /// // 监听配置变更通知
+    /// NotificationCenter.default.addObserver(
+    ///     forName: DebugProbeSettings.configurationDidChangeNotification,
+    ///     object: nil,
+    ///     queue: .main
+    /// ) { _ in
+    ///     DebugProbe.shared.reconnect()
+    /// }
+    /// ```
+    public func reconnect() {
+        let settings = DebugProbeSettings.shared
+
+        // 检查是否禁用
+        guard settings.isEnabled else {
+            stop()
+            return
+        }
+
+        // 如果未启动，则启动
+        guard isStarted else {
+            start()
+            return
+        }
+
+        // 已启动，使用新配置重连
+        reconnect(hubURL: settings.hubURL, token: settings.token)
     }
 
     /// 使用新的配置重新连接
@@ -286,7 +372,7 @@ public final class DebugProbe {
     ///
     /// 使用方式（在 AppDelegate/SceneDelegate 中）：
     /// ```swift
-    /// #if !APPSTORE
+    /// #if DEBUG
     /// import DebugProbe
     ///
     /// // 可以在 DebugProbe.start() 之前设置钩子
