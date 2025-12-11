@@ -306,7 +306,7 @@ public final class DebugBridgeClient: NSObject {
             handleError(error)
 
         default:
-            // 所有其他消息类型（toggleCapture, updateMockRules, updateBreakpointRules,
+            // 所有其他消息类型（updateMockRules, updateBreakpointRules,
             // updateChaosRules, breakpointResume, dbCommand 等）都通过插件系统路由
             DispatchQueue.main.async { [weak self] in
                 self?.onBridgeMessageReceived?(message)

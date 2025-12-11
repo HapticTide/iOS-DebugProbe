@@ -157,10 +157,6 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
         // 根据消息类型转换为插件命令
 
         switch message {
-        case let .toggleCapture(network, log, websocket, database):
-            // 转换为各插件的 enable/disable 命令
-            await routeToggleCapture(network: network, log: log, websocket: websocket, database: database)
-
         case let .updateMockRules(rules):
             // 路由到 Mock 插件
             await routeMockRulesUpdate(rules)
@@ -180,37 +176,6 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
         default:
             break
         }
-    }
-
-    /// 路由捕获开关命令
-    private func routeToggleCapture(network: Bool, log: Bool, websocket: Bool, database: Bool) async {
-        // 网络插件
-        let networkCommand = PluginCommand(
-            pluginId: BuiltinPluginId.network,
-            commandType: network ? "enable" : "disable"
-        )
-        await pluginManager.routeCommand(networkCommand)
-
-        // 日志插件
-        let logCommand = PluginCommand(
-            pluginId: BuiltinPluginId.log,
-            commandType: log ? "enable" : "disable"
-        )
-        await pluginManager.routeCommand(logCommand)
-
-        // WebSocket 插件
-        let wsCommand = PluginCommand(
-            pluginId: BuiltinPluginId.webSocket,
-            commandType: websocket ? "enable" : "disable"
-        )
-        await pluginManager.routeCommand(wsCommand)
-
-        // 数据库插件
-        let dbCommand = PluginCommand(
-            pluginId: BuiltinPluginId.database,
-            commandType: database ? "enable" : "disable"
-        )
-        await pluginManager.routeCommand(dbCommand)
     }
 
     /// 路由 Mock 规则更新

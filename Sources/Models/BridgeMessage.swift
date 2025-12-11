@@ -31,9 +31,6 @@ public enum BridgeMessage: Codable {
     /// 注册成功响应
     case registered(sessionId: String)
 
-    /// 开关控制
-    case toggleCapture(network: Bool, log: Bool, websocket: Bool, database: Bool)
-
     /// 更新 Mock 规则
     case updateMockRules([MockRule])
 
@@ -78,7 +75,6 @@ public enum BridgeMessage: Codable {
         case breakpointHit
         case pluginEvent
         case registered
-        case toggleCapture
         case updateMockRules
         case requestExport
         case replayRequest
@@ -113,14 +109,6 @@ public enum BridgeMessage: Codable {
         case .registered:
             let payload = try container.decode(RegisteredPayload.self, forKey: .payload)
             self = .registered(sessionId: payload.sessionId)
-        case .toggleCapture:
-            let payload = try container.decode(ToggleCapturePayload.self, forKey: .payload)
-            self = .toggleCapture(
-                network: payload.network,
-                log: payload.log,
-                websocket: payload.websocket,
-                database: payload.database
-            )
         case .updateMockRules:
             let rules = try container.decode([MockRule].self, forKey: .payload)
             self = .updateMockRules(rules)
@@ -175,12 +163,6 @@ public enum BridgeMessage: Codable {
         case let .registered(sessionId):
             try container.encode(MessageType.registered, forKey: .type)
             try container.encode(RegisteredPayload(sessionId: sessionId), forKey: .payload)
-        case let .toggleCapture(network, log, websocket, database):
-            try container.encode(MessageType.toggleCapture, forKey: .type)
-            try container.encode(
-                ToggleCapturePayload(network: network, log: log, websocket: websocket, database: database),
-                forKey: .payload
-            )
         case let .updateMockRules(rules):
             try container.encode(MessageType.updateMockRules, forKey: .type)
             try container.encode(rules, forKey: .payload)
@@ -224,13 +206,6 @@ private struct RegisterPayload: Codable {
 
 private struct RegisteredPayload: Codable {
     let sessionId: String
-}
-
-private struct ToggleCapturePayload: Codable {
-    let network: Bool
-    let log: Bool
-    let websocket: Bool
-    let database: Bool
 }
 
 private struct ExportPayload: Codable {

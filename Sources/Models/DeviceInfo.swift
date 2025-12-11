@@ -23,10 +23,6 @@ public struct DeviceInfo: Codable {
     public let buildNumber: String
     public let platform: String
     public let isSimulator: Bool
-    public var captureEnabled: Bool
-    public var logCaptureEnabled: Bool
-    public var wsCaptureEnabled: Bool
-    public var dbInspectorEnabled: Bool
     public let appIcon: String?
 
     public init(
@@ -40,10 +36,6 @@ public struct DeviceInfo: Codable {
         buildNumber: String,
         platform: String = "iOS",
         isSimulator: Bool = false,
-        captureEnabled: Bool = true,
-        logCaptureEnabled: Bool = true,
-        wsCaptureEnabled: Bool = true,
-        dbInspectorEnabled: Bool = true,
         appIcon: String? = nil
     ) {
         self.deviceId = deviceId
@@ -56,10 +48,6 @@ public struct DeviceInfo: Codable {
         self.buildNumber = buildNumber
         self.platform = platform
         self.isSimulator = isSimulator
-        self.captureEnabled = captureEnabled
-        self.logCaptureEnabled = logCaptureEnabled
-        self.wsCaptureEnabled = wsCaptureEnabled
-        self.dbInspectorEnabled = dbInspectorEnabled
         self.appIcon = appIcon
     }
 }
