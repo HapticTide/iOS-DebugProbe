@@ -1,10 +1,12 @@
 # DebugProbe
 
-iOS 调试探针 SDK，用于实时捕获和分析 iOS App 的网络请求、日志、数据库等调试信息。
+移动 App 调试探针 SDK，用于实时捕获和分析 App 的网络请求、日志、数据库等调试信息。
 
 > [!IMPORTANT]
 >
 > **本项目全部代码和文档均由 Agent AI 生成**
+
+> **当前版本**: v1.4.0 | **最后更新**: 2025-12-11
 
 ## 功能特性
 
@@ -49,7 +51,7 @@ iOS 调试探针 SDK，用于实时捕获和分析 iOS App 的网络请求、日
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/aspect-build/DebugProbe.git", from: "1.0.0")
+    .package(url: "https://github.com/sunimp/DebugProbe.git", from: "1.4.0")
 ]
 ```
 
@@ -170,7 +172,7 @@ DebugProbe 采用插件化架构，所有功能模块（网络、日志、Mock �
                                      │ WebSocket
                                      ▼
                               ┌─────────────┐
-                              │  DebugHub   │
+                              │ Debug Hub  │
                               │  (服务端)    │
                               └─────────────┘
 ```
@@ -249,4 +251,4 @@ MIT License
 
 ## 相关项目
 
-- [DebugPlatform](https://github.com/sunimp/DebugPlatform) - 完整的调试平台（包含 DebugHub 服务端和 Web UI）
+- [Debug Platform](https://github.com/sunimp/DebugPlatform) - 完整的调试平台（包含 Debug Hub 服务端和 Web UI）
