@@ -306,7 +306,7 @@ DebugProbe/
 
 ## 与 DebugHub 配合使用
 
-DebugProbe 需要配合 [DebugHub](https://github.com/example/DebugPlatform) 服务端使用：
+DebugProbe 需要配合 [DebugHub](https://github.com/sunimp/DebugPlatform) 服务端使用：
 
 1. 启动 DebugHub 服务器
 2. 在 iOS App 中配置 DebugProbe 连接到 DebugHub
