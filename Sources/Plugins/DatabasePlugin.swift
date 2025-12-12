@@ -206,6 +206,8 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
                 tableName: tableName,
                 page: page,
                 pageSize: pageSize,
+                orderBy: command.orderBy,
+                ascending: command.ascending ?? true,
                 requestId: command.requestId
             )
 
@@ -260,6 +262,8 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
         tableName: String,
         page: Int,
         pageSize: Int,
+        orderBy: String?,
+        ascending: Bool,
         requestId: String
     ) async -> DBResponse {
         do {
@@ -268,8 +272,8 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
                 table: tableName,
                 page: page,
                 pageSize: pageSize,
-                orderBy: nil,
-                ascending: true
+                orderBy: orderBy,
+                ascending: ascending
             )
             return try .success(requestId: requestId, data: result)
         } catch let error as DBInspectorError {
