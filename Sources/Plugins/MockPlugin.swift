@@ -18,7 +18,7 @@ public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
     public let displayName: String = "Mock"
     public let version: String = "1.0.0"
     public let pluginDescription: String = "HTTP 请求 Mock 与规则管理"
-    public let dependencies: [String] = [BuiltinPluginId.network]
+    public let dependencies: [String] = [BuiltinPluginId.http]
 
     // MARK: - State
 

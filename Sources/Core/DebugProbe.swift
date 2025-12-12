@@ -11,48 +11,12 @@ import Foundation
 public final class DebugProbe {
     // MARK: - Singleton
 
-    public static let shared = DebugProbe()
+    public static let shared: DebugProbe = {
+        // 确保在 DebugProbe 首次访问时记录启动时间
+        AppLaunchRecorder.ensureRecorded()
+        return DebugProbe()
+    }()
 
-    // MARK: - Configuration
-
-    public struct Configuration {
-        public let hubURL: URL
-        public let token: String
-        public var maxBufferSize: Int = 10000
-
-        /// 网络捕获模式
-        ///
-        /// - `.automatic`（默认）: 自动拦截所有网络请求，无需修改业务代码
-        /// - `.manual`: 需要手动将 protocolClasses 注入到 URLSessionConfiguration
-        ///
-        /// 自动模式通过 Swizzle URLSessionConfiguration 实现，对 Alamofire、
-        /// 自定义 URLSession 等所有网络层都生效，是推荐的使用方式。
-        public var networkCaptureMode: NetworkCaptureMode = .automatic
-
-        /// 网络捕获范围
-        ///
-        /// - `.http`: 仅捕获 HTTP/HTTPS 请求
-        /// - `.webSocket`: 仅捕获 WebSocket 连接
-        /// - `.all`（默认）: 捕获所有网络活动
-        ///
-        /// WebSocket 捕获仅在 `.automatic` 模式下生效
-        public var networkCaptureScope: NetworkCaptureScope = .all
-
-        /// 是否启用事件持久化（断线时保存到本地，重连后恢复发送）
-        public var enablePersistence: Bool = true
-
-        /// 持久化队列最大大小
-        public var maxPersistenceQueueSize: Int = 100_000
-
-        /// 持久化事件最大保留天数
-        public var persistenceRetentionDays: Int = 3
-
-        public init(hubURL: URL, token: String) {
-            self.hubURL = hubURL
-            self.token = token
-        }
-    }
-    
     // MARK: - Versions
     public static var version: String { "1.4.0" }
 
@@ -65,7 +29,6 @@ public final class DebugProbe {
     // MARK: - State
 
     public private(set) var isStarted: Bool = false
-    public private(set) var configuration: Configuration?
 
     /// 当前连接状态（便捷访问）
     public var connectionState: DebugBridgeClient.ConnectionState {
@@ -110,12 +73,18 @@ public final class DebugProbe {
 
     // MARK: - Start / Stop
 
-    /// 使用 DebugProbeSettings 中的配置启动 DebugProbe（推荐方式）
+    /// 启动 DebugProbe
     ///
-    /// 这是最简单的启动方式，自动从 `DebugProbeSettings.shared` 读取配置。
+    /// 所有配置通过 `DebugProbeSettings.shared` 管理，包括：
+    /// - hubHost/hubPort/token: 连接配置
+    /// - networkCaptureMode: 网络捕获模式（自动/手动）
+    /// - networkCaptureScope: 网络捕获范围（HTTP/WebSocket/全部）
+    /// - enablePersistence: 是否启用事件持久化
+    /// - 其他高级配置
+    ///
     /// 配置可通过以下方式设置：
     /// - Info.plist（DEBUGHUB_HOST, DEBUGHUB_PORT, DEBUGHUB_TOKEN）
-    /// - 运行时修改 `DebugProbeSettings.shared.hubHost` 等属性
+    /// - 运行时修改 `DebugProbeSettings.shared` 属性
     /// - 调用 `DebugProbeSettings.shared.configure(host:port:token:)`
     ///
     /// 使用示例：
@@ -127,16 +96,7 @@ public final class DebugProbe {
     /// DebugProbeSettings.shared.configure(host: "192.168.1.100", port: 8081)
     /// DebugProbe.shared.start()
     /// ```
-    ///
-    /// - Parameters:
-    ///   - networkCaptureMode: 网络捕获模式，默认 `.automatic`
-    ///   - networkCaptureScope: 网络捕获范围，默认 `.all`
-    ///   - enablePersistence: 是否启用持久化，默认 `true`
-    public func start(
-        networkCaptureMode: NetworkCaptureMode = .automatic,
-        networkCaptureScope: NetworkCaptureScope = .all,
-        enablePersistence: Bool = true
-    ) {
+    public func start() {
         let settings = DebugProbeSettings.shared
 
         // 检查是否禁用
@@ -145,38 +105,21 @@ public final class DebugProbe {
             return
         }
 
-        var config = Configuration(
-            hubURL: settings.hubURL,
-            token: settings.token
-        )
-        config.networkCaptureMode = networkCaptureMode
-        config.networkCaptureScope = networkCaptureScope
-        config.enablePersistence = enablePersistence
-
-        start(configuration: config)
-    }
-
-    /// 启动 Debug Probe（使用自定义配置）
-    ///
-    /// 用于需要完全控制配置的高级场景。大多数情况下推荐使用无参数的 `start()` 方法。
-    public func start(configuration: Configuration) {
         guard !isStarted else {
             DebugLog.debug("Already started")
             return
         }
 
-        self.configuration = configuration
-
         // 配置 Bridge Client
-        var bridgeConfig = DebugBridgeClient.Configuration(hubURL: configuration.hubURL, token: configuration.token)
-        bridgeConfig.maxBufferSize = configuration.maxBufferSize
-        bridgeConfig.enablePersistence = configuration.enablePersistence
+        var bridgeConfig = DebugBridgeClient.Configuration(hubURL: settings.hubURL, token: settings.token)
+        bridgeConfig.maxBufferSize = settings.maxBufferSize
+        bridgeConfig.enablePersistence = settings.enablePersistence
 
         // 配置持久化队列
-        if configuration.enablePersistence {
+        if settings.enablePersistence {
             var persistenceConfig = EventPersistenceQueue.Configuration()
-            persistenceConfig.maxQueueSize = configuration.maxPersistenceQueueSize
-            persistenceConfig.maxRetentionSeconds = TimeInterval(configuration.persistenceRetentionDays * 24 * 3600)
+            persistenceConfig.maxQueueSize = settings.maxPersistenceQueueSize
+            persistenceConfig.maxRetentionSeconds = TimeInterval(settings.persistenceRetentionDays * 24 * 3600)
             bridgeConfig.persistenceConfig = persistenceConfig
         }
 
@@ -192,15 +135,13 @@ public final class DebugProbe {
             bridgeClient: bridgeClient
         )
 
-        // 启动插件系统（网络、日志等捕获均由插件控制）
-        startPluginSystem(configuration: configuration)
+        // 启动插件系统
+        startPluginSystem()
 
         isStarted = true
-        DebugLog.info("Started with hub: \(configuration.hubURL)")
-        if configuration.enablePersistence {
-            DebugLog.info(
-                "Persistence enabled (max \(configuration.maxPersistenceQueueSize) events, \(configuration.persistenceRetentionDays) days)"
-            )
+        DebugLog.info("Started with hub: \(settings.hubURL)")
+        if settings.enablePersistence {
+            DebugLog.debug("Persistence enabled, max queue: \(settings.maxPersistenceQueueSize)")
         }
     }
 
@@ -271,30 +212,26 @@ public final class DebugProbe {
     /// 使用新的配置重新连接
     /// 用于运行时配置变更后重新连接到新的 DebugHub
     public func reconnect(hubURL: URL, token: String) {
-        guard isStarted, let config = configuration else {
+        guard isStarted else {
             DebugLog.debug("Not started, cannot reconnect")
             return
         }
+
+        let settings = DebugProbeSettings.shared
 
         DebugLog.debug("Reconnecting to \(hubURL)...")
 
         // 断开当前连接
         bridgeClient.disconnect()
 
-        // 更新配置
-        configuration = Configuration(
-            hubURL: hubURL,
-            token: token
-        )
-
         // 重新连接
         var bridgeConfig = DebugBridgeClient.Configuration(hubURL: hubURL, token: token)
-        bridgeConfig.enablePersistence = config.enablePersistence
+        bridgeConfig.enablePersistence = settings.enablePersistence
 
-        if config.enablePersistence {
+        if settings.enablePersistence {
             var persistenceConfig = EventPersistenceQueue.Configuration()
-            persistenceConfig.maxQueueSize = config.maxPersistenceQueueSize
-            persistenceConfig.maxRetentionSeconds = TimeInterval(config.persistenceRetentionDays * 24 * 3600)
+            persistenceConfig.maxQueueSize = settings.maxPersistenceQueueSize
+            persistenceConfig.maxRetentionSeconds = TimeInterval(settings.persistenceRetentionDays * 24 * 3600)
             bridgeConfig.persistenceConfig = persistenceConfig
         }
 
@@ -308,13 +245,13 @@ public final class DebugProbe {
     /// - Parameter enabled: 是否启用
     public func setNetworkCaptureEnabled(_ enabled: Bool) {
         Task {
-            await pluginManager.setPluginEnabled(BuiltinPluginId.network, enabled: enabled)
+            await pluginManager.setPluginEnabled(BuiltinPluginId.http, enabled: enabled)
         }
     }
 
     /// 获取网络捕获是否启用
     public func isNetworkCaptureActive() -> Bool {
-        pluginManager.isPluginEnabled(BuiltinPluginId.network)
+        pluginManager.isPluginEnabled(BuiltinPluginId.http)
     }
 
     /// 设置日志捕获是否启用
@@ -511,7 +448,7 @@ public extension DebugProbe {
         DebugLog.debug("[Plugin] Registering builtin plugins...")
 
         // 注册核心监控插件
-        try? pluginManager.register(plugin: NetworkPlugin())
+        try? pluginManager.register(plugin: HttpPlugin())
         try? pluginManager.register(plugin: LogPlugin())
         try? pluginManager.register(plugin: DatabasePlugin())
         try? pluginManager.register(plugin: WebSocketPlugin())
@@ -526,8 +463,7 @@ public extension DebugProbe {
     }
 
     /// 启动插件系统
-    /// - Parameter configuration: 启动配置
-    private func startPluginSystem(configuration: Configuration) {
+    private func startPluginSystem() {
         DebugLog.debug("[Plugin] Starting plugin system...")
 
         // 构建设备信息
@@ -563,5 +499,12 @@ public extension DebugProbe {
     /// - Returns: 插件实例（如果存在）
     func plugin(withId id: String) -> DebugProbePlugin? {
         pluginManager.getPlugin(pluginId: id)
+    }
+
+    /// 获取指定类型的插件
+    /// - Parameter type: 插件类型
+    /// - Returns: 插件实例（如果存在且类型匹配）
+    func plugin<T: DebugProbePlugin>(ofType type: T.Type) -> T? {
+        pluginManager.getAllPlugins().first { $0 is T } as? T
     }
 }

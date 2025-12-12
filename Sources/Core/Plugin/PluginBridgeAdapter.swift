@@ -85,12 +85,12 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
     // MARK: - Event Handling
 
     /// 处理插件事件
-    /// 内置插件（network, log, websocket, performance）的原始事件已通过 EventCallbacks.reportEvent() 直接发送到 BridgeClient
+    /// 内置插件（http, log, websocket, performance）的原始事件已通过 EventCallbacks.reportEvent() 直接发送到 BridgeClient
     /// 这里收到的 PluginEvent 主要用于插件系统内部状态管理，通常只需日志记录
     /// 自定义插件的事件可能需要特殊处理
     private func handlePluginEvent(_ event: PluginEvent) {
         switch event.pluginId {
-        case BuiltinPluginId.network,
+        case BuiltinPluginId.http,
              BuiltinPluginId.log,
              BuiltinPluginId.webSocket,
              BuiltinPluginId.performance:
@@ -297,9 +297,30 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
                 displayName: displayName,
                 isEnabled: isEnabled
             ))
+
+            // 同步 SDK 插件的启用/停止状态
+            // 当 WebUI 禁用插件时，SDK 也停止该插件的数据采集
+            syncPluginEnabledState(pluginId: pluginId, isEnabled: isEnabled)
         }
 
         // 更新 WebUI 插件状态管理器
         WebUIPluginStateManager.shared.updateStates(states)
+    }
+
+    /// 同步 SDK 插件的启用/停止状态
+    /// - Parameters:
+    ///   - pluginId: 插件 ID
+    ///   - isEnabled: 是否启用
+    private func syncPluginEnabledState(pluginId: String, isEnabled: Bool) {
+        // 获取当前 SDK 插件的启用状态
+        let currentEnabled = pluginManager.isPluginEnabled(pluginId)
+
+        // 如果状态不一致，同步到 SDK
+        if currentEnabled != isEnabled {
+            DebugLog.info(.plugin, "Syncing plugin state from WebUI: \(pluginId) -> \(isEnabled ? "enabled" : "disabled")")
+            Task {
+                await pluginManager.setPluginEnabled(pluginId, enabled: isEnabled)
+            }
+        }
     }
 }

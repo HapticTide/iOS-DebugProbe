@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var token: String = ""
     @State private var isEnabled: Bool = true
     @State private var verboseLogging: Bool = false
+    @State private var captureStackTrace: Bool = false
     @State private var connectionStatus: DebugProbeSettings.ConnectionStatusDetail?
     @State private var webUIPluginStates: [WebUIPluginState] = []
     
@@ -61,8 +62,21 @@ struct SettingsView: View {
                     .onChange(of: verboseLogging) { newValue in
                         settings.verboseLogging = newValue
                     }
+                
+                Toggle("捕获卡顿调用栈", isOn: $captureStackTrace)
+                    .onChange(of: captureStackTrace) { newValue in
+                        settings.captureStackTrace = newValue
+                        // 同步更新 PerformancePlugin 的 JankDetector
+                        Task { @MainActor in
+                            if let plugin = DebugProbe.shared.plugin(ofType: PerformancePlugin.self) {
+                                plugin.jankDetector?.captureStackTrace = newValue
+                            }
+                        }
+                    }
             } header: {
                 Text("功能开关")
+            } footer: {
+                Text("「捕获卡顿调用栈」会有一定性能开销，建议仅在调试时启用")
             }
             
             // MARK: - 3. 连接配置
@@ -135,35 +149,15 @@ struct SettingsView: View {
                 Text("操作")
             }
             
-            // MARK: - 5. SDK 插件模块
+            // MARK: - 5. 插件模块
             Section {
                 ForEach(pluginInfos, id: \.pluginId) { pluginInfo in
-                    SDKPluginStatusRow(pluginInfo: pluginInfo)
+                    PluginStatusRow(pluginInfo: pluginInfo)
                 }
             } header: {
-                Text("SDK 插件模块")
+                Text("插件模块")
             } footer: {
-                Text("显示 DebugProbe SDK 本地插件的启用状态和运行状态")
-            }
-            
-            // MARK: - 5.1 WebUI 插件模块
-            Section {
-                if webUIPluginStates.isEmpty {
-                    Text("等待 WebUI 同步...")
-                        .foregroundStyle(.secondary)
-                        .font(.footnote)
-                } else {
-                    ForEach(webUIPluginStates, id: \.pluginId) { state in
-                        FeatureRow(
-                            name: state.displayName,
-                            enabled: state.isEnabled
-                        )
-                    }
-                }
-            } header: {
-                Text("WebUI 插件模块")
-            } footer: {
-                Text("显示 DebugHub WebUI 中各插件的启用状态。可在 WebUI 设置中管理。")
+                Text("插件状态由 WebUI 统一控制，在 WebUI 中启用/禁用插件会同步到 SDK")
             }
             
             // MARK: - 6. 设备信息
@@ -268,6 +262,7 @@ struct SettingsView: View {
         token = settings.token
         isEnabled = settings.isEnabled
         verboseLogging = settings.verboseLogging
+        captureStackTrace = settings.captureStackTrace
     }
     
     private func updateConnectionStatus() {
@@ -316,10 +311,10 @@ struct FeatureRow: View {
     }
 }
 
-// MARK: - SDKPluginStatusRow
+// MARK: - PluginStatusRow
 
-/// SDK 插件状态行（包含启用状态和运行状态）
-struct SDKPluginStatusRow: View {
+/// 插件状态行（显示统一的运行状态）
+struct PluginStatusRow: View {
     let pluginInfo: PluginInfo
 
     var body: some View {
@@ -335,10 +330,6 @@ struct SDKPluginStatusRow: View {
                 .padding(.vertical, 2)
                 .background(stateColor.opacity(0.15))
                 .cornerRadius(4)
-
-            // 启用状态图标
-            Image(systemName: pluginInfo.isEnabled ? "checkmark.circle.fill" : "xmark.circle")
-                .foregroundStyle(pluginInfo.isEnabled ? .green : .red)
         }
     }
 
@@ -355,7 +346,7 @@ struct SDKPluginStatusRow: View {
         case .stopping:
             "停止中"
         case .stopped:
-            "已停止"
+            "已禁用"
         case .error:
             "错误"
         }

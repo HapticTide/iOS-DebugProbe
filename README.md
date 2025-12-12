@@ -6,7 +6,7 @@ iOS App 调试探针 SDK，用于实时捕获和分析 App 的网络请求、日
 >
 > **本项目全部代码和文档均由 Agent AI 生成**
 
-> **当前版本**: v1.5.0 | **最后更新**: 2025-12-11
+> **当前版本**: 1.4.0 | [更新日志](CHANGELOG.md) | **最后更新**: 2025-12-12
 
 ## 功能特性
 
@@ -51,7 +51,7 @@ iOS App 调试探针 SDK，用于实时捕获和分析 App 的网络请求、日
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/example/DebugProbe.git", from: "1.5.0")
+    .package(url: "https://github.com/example/DebugProbe.git", branch: "main")
 ]
 ```
 
@@ -119,32 +119,16 @@ NotificationCenter.default.addObserver(
 
 ```swift
 #if DEBUG
-// 如需自定义网络捕获等参数
-DebugProbe.shared.start(
-    networkCaptureMode: .automatic,   // .automatic (推荐) 或 .manual
-    networkCaptureScope: .all,        // .all, .http, 或 .webSocket
-    enableLogCapture: true,
-    enablePersistence: true
-)
+// 可以预先配置参数
+let settings = DebugProbeSettings.shared
+settings.hubHost = "192.168.1.100"     // 自定义 Hub 地址
+settings.networkCaptureMode = .automatic
+settings.networkCaptureScope = .all
+settings.enablePersistence = true
+
+// 然后启动
+DebugProbe.shared.start()
 #endif
-```
-
-### 5. 高级：使用自定义 Configuration
-
-```swift
-// 如需完全控制配置（不推荐，除非有特殊需求）
-var config = DebugProbe.Configuration(
-    hubURL: URL(string: "ws://localhost:8081/debug-bridge")!,
-    token: "device-token"
-)
-config.networkCaptureMode = .automatic
-config.networkCaptureScope = .all
-config.enableLogCapture = true
-config.enablePersistence = true
-config.maxPersistenceQueueSize = 100_000
-config.persistenceRetentionDays = 3
-
-DebugProbe.shared.start(configuration: config)
 ```
 
 ### 6. 注册数据库（可选）
@@ -183,6 +167,57 @@ DebugProbe.shared.warning("警告信息")
 DebugProbe.shared.error("错误信息")
 ```
 
+### 8. CocoaLumberjack 集成（可选）
+
+DebugProbe SDK 不包含 CocoaLumberjack 依赖。如果您的项目使用 CocoaLumberjack，需要手动创建桥接器：
+
+```swift
+#if canImport(CocoaLumberjack)
+import Foundation
+import CocoaLumberjack
+import DebugProbe
+
+/// CocoaLumberjack 日志桥接器
+public final class DDLogBridgeLocal: DDAbstractLogger {
+    private var _logFormatter: DDLogFormatter?
+
+    override public var logFormatter: DDLogFormatter? {
+        get { _logFormatter }
+        set { _logFormatter = newValue }
+    }
+
+    override public func log(message logMessage: DDLogMessage) {
+        DebugProbe.shared.log(
+            level: mapDDLogFlagToLevel(logMessage.flag),
+            message: logMessage.message,
+            subsystem: logMessage.fileName,
+            category: logMessage.function ?? "DDLog"
+        )
+    }
+
+    private func mapDDLogFlagToLevel(_ flag: DDLogFlag) -> LogEvent.Level {
+        switch flag {
+        case .verbose: return .verbose
+        case .debug: return .debug
+        case .info: return .info
+        case .warning: return .warning
+        case .error: return .error
+        default: return .debug
+        }
+    }
+}
+#endif
+```
+
+然后在 AppDelegate 中注册：
+
+```swift
+#if canImport(CocoaLumberjack)
+DDLog.add(DDLogBridgeLocal())
+DDLog.add(DDOSLogger.sharedInstance)  // 可选：保留控制台输出
+#endif
+```
+
 ## API 概览
 
 ### DebugProbe
@@ -190,7 +225,6 @@ DebugProbe.shared.error("错误信息")
 | 方法 | 说明 |
 |------|------|
 | `start()` | 使用 DebugProbeSettings 配置启动（推荐） |
-| `start(configuration:)` | 使用自定义 Configuration 启动 |
 | `stop()` | 停止 DebugProbe |
 | `reconnect()` | 使用 DebugProbeSettings 配置重连（推荐） |
 | `reconnect(hubURL:token:)` | 使用指定 URL 和 Token 重连 |
@@ -226,16 +260,21 @@ DebugProbe 采用插件化架构，所有功能模块（网络、日志、Mock �
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌───────────────┐   ┌───────────────┐   ┌───────────────┐                 │
-│  │ NetworkPlugin │   │   LogPlugin   │   │WebSocketPlugin│                 │
+│  │   HttpPlugin  │   │   LogPlugin   │   │WebSocketPlugin│                 │
 │  │  (HTTP 捕获)   │   │  (日志捕获)    │   │  (WS 监控)    │                 │
+│  └───────┬───────┘   └───────┬───────┘   └───────┬───────┘                 │
+│          │                   │                   │                          │
+│  ┌───────────────┐   ┌───────────────┐   ┌───────────────┐                 │
+│  │  MockPlugin   │   │BreakpointPlugin│  │  ChaosPlugin  │                 │
+│  │  (Mock 规则)   │   │  (断点调试)    │   │  (故障注入)   │                 │
 │  └───────┬───────┘   └───────┬───────┘   └───────┬───────┘                 │
 │          │                   │                   │                          │
 │          ▼                   ▼                   ▼                          │
 │  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │                        EventCallbacks                                  │ │
-│  │  • onHTTPEvent / onLogEvent / onWebSocketEvent (捕获层 → 插件层)      │ │
-│  │  • onDebugEvent (插件层 → BridgeClient)                               │ │
-│  │  • mockHTTPRequest / mockWSFrame (Mock 拦截)                          │ │
+│  │                      PluginManager + EventCallbacks                    │ │
+│  │  • 插件生命周期管理（注册/启动/停止）                                   │ │
+│  │  • 事件路由（捕获层 → 插件层 → BridgeClient）                          │ │
+│  │  • 命令分发（服务端命令 → 目标插件）                                    │ │
 │  └───────────────────────────────────────────────────────────────────────┘ │
 │          │                                                                  │
 │          ▼                                                                  │
@@ -250,7 +289,7 @@ DebugProbe 采用插件化架构，所有功能模块（网络、日志、Mock �
                                      │ WebSocket
                                      ▼
                               ┌─────────────┐
-                              │ Debug Hub  │
+                              │ Debug Hub   │
                               │  (服务端)    │
                               └─────────────┘
 ```
@@ -259,13 +298,14 @@ DebugProbe 采用插件化架构，所有功能模块（网络、日志、Mock �
 
 | 插件 ID | 插件名称 | 功能 |
 |---------|---------|------|
-| `network` | NetworkPlugin | HTTP/HTTPS 请求捕获 |
+| `http` | HttpPlugin | HTTP/HTTPS 请求捕获 |
 | `log` | LogPlugin | 日志捕获（DDLog, OSLog） |
 | `websocket` | WebSocketPlugin | WebSocket 连接监控 |
 | `mock` | MockPlugin | HTTP/WS Mock 规则管理 |
 | `database` | DatabasePlugin | SQLite 数据库检查 |
 | `breakpoint` | BreakpointPlugin | 请求/响应断点调试 |
 | `chaos` | ChaosPlugin | 故障注入（Chaos Engineering） |
+| `performance` | PerformancePlugin | 性能监控（CPU/内存/FPS） |
 
 ### 目录结构
 
@@ -285,13 +325,14 @@ DebugProbe/
 │   │   │   ├── BreakpointEngine.swift    # 断点引擎
 │   │   │   ├── ChaosEngine.swift         # 故障注入引擎
 │   │   │   └── MockRuleEngine.swift      # Mock 规则引擎
-│   │   ├── NetworkPlugin.swift       # 网络插件
+│   │   ├── HttpPlugin.swift          # HTTP 网络插件
 │   │   ├── LogPlugin.swift           # 日志插件
 │   │   ├── WebSocketPlugin.swift     # WebSocket 插件
 │   │   ├── MockPlugin.swift          # Mock 插件
 │   │   ├── DatabasePlugin.swift      # 数据库插件
 │   │   ├── BreakpointPlugin.swift    # 断点插件
-│   │   └── ChaosPlugin.swift         # Chaos 插件
+│   │   ├── ChaosPlugin.swift         # Chaos 插件
+│   │   └── PerformancePlugin.swift   # 性能监控插件
 │   ├── Network/
 │   │   ├── NetworkInstrumentation.swift  # HTTP 拦截基础设施
 │   │   └── WebSocketInstrumentation.swift # WebSocket 拦截基础设施

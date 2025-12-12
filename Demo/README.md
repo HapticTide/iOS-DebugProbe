@@ -67,27 +67,48 @@ DebugProbeDemo/
 ├── Views/
 │   ├── NetworkDemoView.swift   # HTTP 请求演示
 │   ├── WebSocketDemoView.swift # WebSocket 演示
-│   ├── LogDemoView.swift       # 日志演示
+│   ├── LogDemoView.swift       # 日志演示（含 os_log 和 CocoaLumberjack 示例）
 │   ├── DatabaseDemoView.swift  # 数据库演示
 │   ├── MockDemoView.swift      # Mock/断点演示
 │   └── SettingsView.swift      # 设置页面
 └── Managers/
     ├── DatabaseManager.swift   # SQLite 数据库管理
-    └── WebSocketManager.swift  # WebSocket 连接管理
+    ├── WebSocketManager.swift  # WebSocket 连接管理
+    └── DDLogBridgeLocal.swift  # CocoaLumberjack 日志桥接器
 ```
 
 ## 配置说明
 
-默认配置连接到本地 Debug Hub：
+默认配置连接到本地 Debug Hub，通过 `DebugProbeSettings` 统一管理：
 
 ```swift
-var config = DebugProbe.Configuration(
-    hubURL: URL(string: "ws://127.0.0.1:8081/debug-bridge")!,
-    token: "demo-device-xxx"
-)
+// 启动时自动读取 DebugProbeSettings.shared 中的配置
+// 默认连接到 ws://127.0.0.1:8081/debug-bridge
+DebugProbe.shared.start()
+
+// 如需自定义配置
+let settings = DebugProbeSettings.shared
+settings.hubHost = "192.168.1.100"  // 局域网 IP
+settings.hubPort = 8081
 ```
 
-如需连接到其他地址，请修改 `DebugProbeDemoApp.swift` 中的配置。
+如需连接到其他地址，可在设置页面修改或直接修改 `DebugProbeSettings.shared`。
+
+## 添加 CocoaLumberjack 依赖（可选）
+
+Demo App 已包含 CocoaLumberjack 日志桥接器 `DDLogBridgeLocal`，但需要手动添加 CocoaLumberjack 依赖才能激活：
+
+1. 在 Xcode 中打开 Demo 项目
+2. 选择项目 → Package Dependencies → 点击 "+"
+3. 输入：`https://github.com/CocoaLumberjack/CocoaLumberjack.git`
+4. 选择版本（建议 3.8.x）
+5. 添加 `CocoaLumberjack` 和 `CocoaLumberjackSwift` 到 Demo target
+
+添加后：
+- LogDemoView 中的 CocoaLumberjack 按钮会自动显示
+- DDLog 日志会自动转发到 DebugProbe
+
+> **注意**: DebugProbe SDK 本身不包含 CocoaLumberjack 依赖。宿主 App 如需集成，可参考 `DDLogBridgeLocal.swift` 的实现。
 
 ## 测试用 API
 

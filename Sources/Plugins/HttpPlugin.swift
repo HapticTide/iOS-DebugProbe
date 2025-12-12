@@ -1,4 +1,4 @@
-// NetworkPlugin.swift
+// HttpPlugin.swift
 // DebugProbe
 //
 // Created by Sun on 2025/12/09.
@@ -7,17 +7,17 @@
 
 import Foundation
 
-// MARK: - Network Plugin
+// MARK: - HTTP Plugin
 
-/// 网络监控插件
+/// HTTP 请求监控插件
 /// 负责 HTTP/HTTPS 请求的拦截、记录和上报
-public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
+public final class HttpPlugin: DebugProbePlugin, @unchecked Sendable {
     // MARK: - Plugin Metadata
 
-    public let pluginId: String = BuiltinPluginId.network
-    public let displayName: String = "Network"
+    public let pluginId: String = BuiltinPluginId.http
+    public let displayName: String = "HTTP"
     public let version: String = "1.0.0"
-    public let pluginDescription: String = "HTTP/HTTPS 网络请求监控"
+    public let pluginDescription: String = "HTTP/HTTPS 请求监控"
     public let dependencies: [String] = []
 
     // MARK: - State
@@ -46,15 +46,15 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
         self.context = context
 
         // 从配置恢复状态
-        if let enabled: Bool = context.getConfiguration(for: "network.enabled") {
+        if let enabled: Bool = context.getConfiguration(for: "http.enabled") {
             isEnabled = enabled
         }
-        if let mode: String = context.getConfiguration(for: "network.captureMode") {
+        if let mode: String = context.getConfiguration(for: "http.captureMode") {
             captureMode = mode == "manual" ? .manual : .automatic
         }
 
         state = .stopped
-        context.logInfo("NetworkPlugin initialized")
+        context.logInfo("HttpPlugin initialized")
     }
 
     public func start() async throws {
@@ -72,7 +72,7 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
         NetworkInstrumentation.shared.start(mode: captureMode, scope: scope)
 
         stateQueue.sync { state = .running }
-        context?.logInfo("NetworkPlugin started with mode: \(captureMode), scope: \(scope)")
+        context?.logInfo("HttpPlugin started with mode: \(captureMode), scope: \(scope)")
     }
 
     public func pause() async {
@@ -80,7 +80,7 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
 
         NetworkInstrumentation.shared.stop()
         stateQueue.sync { state = .paused }
-        context?.logInfo("NetworkPlugin paused")
+        context?.logInfo("HttpPlugin paused")
     }
 
     public func resume() async {
@@ -90,7 +90,7 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
         NetworkInstrumentation.shared.start(mode: captureMode, scope: scope)
 
         stateQueue.sync { state = .running }
-        context?.logInfo("NetworkPlugin resumed")
+        context?.logInfo("HttpPlugin resumed")
     }
 
     public func stop() async {
@@ -102,7 +102,7 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
         unregisterEventCallback()
 
         stateQueue.sync { state = .stopped }
-        context?.logInfo("NetworkPlugin stopped")
+        context?.logInfo("HttpPlugin stopped")
     }
 
     public func handleCommand(_ command: PluginCommand) async {
@@ -180,7 +180,7 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
 
     /// 注册事件回调
     /// CaptureURLProtocol 通过 EventCallbacks.reportHTTP() 上报事件
-    /// NetworkPlugin 接收后通过 EventCallbacks.reportEvent() 发送到 BridgeClient
+    /// HttpPlugin 接收后通过 EventCallbacks.reportEvent() 发送到 BridgeClient
     private func registerEventCallback() {
         EventCallbacks.onHTTPEvent = { [weak self] httpEvent in
             self?.handleHTTPEvent(httpEvent)
@@ -224,11 +224,11 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
         }
 
         do {
-            let config = try JSONDecoder().decode(NetworkPluginConfig.self, from: payload)
+            let config = try JSONDecoder().decode(HttpPluginConfig.self, from: payload)
 
             if let mode = config.captureMode {
                 captureMode = mode == "manual" ? .manual : .automatic
-                context?.setConfiguration(mode, for: "network.captureMode")
+                context?.setConfiguration(mode, for: "http.captureMode")
             }
 
             if let httpOnly = config.httpOnly {
@@ -248,7 +248,7 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
     }
 
     private func handleGetStatus(_ command: PluginCommand) async {
-        let status = NetworkPluginStatus(
+        let status = HttpPluginStatus(
             isEnabled: isEnabled,
             captureMode: captureMode == .automatic ? "automatic" : "manual",
             httpOnly: httpOnly,
@@ -345,14 +345,14 @@ public final class NetworkPlugin: DebugProbePlugin, @unchecked Sendable {
 
 // MARK: - Configuration DTOs
 
-/// 网络插件配置
-struct NetworkPluginConfig: Codable {
+/// HTTP 插件配置
+struct HttpPluginConfig: Codable {
     let captureMode: String?
     let httpOnly: Bool?
 }
 
-/// 网络插件状态
-struct NetworkPluginStatus: Codable {
+/// HTTP 插件状态
+struct HttpPluginStatus: Codable {
     let isEnabled: Bool
     let captureMode: String
     let httpOnly: Bool

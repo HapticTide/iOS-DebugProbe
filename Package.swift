@@ -14,15 +14,15 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // 可选：如果项目使用 CocoaLumberjack
-         .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack.git",  .upToNextMinor(from: "3.8.5")),
+        // CocoaLumberjack 为可选依赖
+        // 如果宿主工程需要使用 DDLogBridge，需要在宿主工程中也添加 CocoaLumberjack 依赖
+        // .package(url: "https://github.com/CocoaLumberjack/CocoaLumberjack.git", from: "3.8.0"),
     ],
     targets: [
         .target(
             name: "DebugProbe",
             dependencies: [
-                "CocoaLumberjack",
-                .product(name: "CocoaLumberjackSwift", package: "CocoaLumberjack"),
+                // CocoaLumberjack 为可选依赖，使用 #if canImport(CocoaLumberjack) 条件编译
             ],
             path: "Sources"
         ),

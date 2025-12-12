@@ -22,6 +22,9 @@ public final class DebugProbeSettings {
         static let token = "DebugProbe.token"
         static let isEnabled = "DebugProbe.isEnabled"
         static let verboseLogging = "DebugProbe.verboseLogging"
+        static let captureStackTrace = "DebugProbe.captureStackTrace"
+        static let networkCaptureMode = "DebugProbe.networkCaptureMode"
+        static let networkCaptureScope = "DebugProbe.networkCaptureScope"
     }
 
     // MARK: - Default Values
@@ -32,6 +35,26 @@ public final class DebugProbeSettings {
     public static var defaultPort = 8081
     /// 默认 Token (可配置)
     public static var defaultToken = "debug-token-2025"
+    /// 默认缓冲区大小
+    public static var defaultMaxBufferSize = 10000
+    /// 默认持久化队列大小
+    public static var defaultMaxPersistenceQueueSize = 100_000
+    /// 默认持久化保留天数
+    public static var defaultPersistenceRetentionDays = 3
+
+    // MARK: - Runtime Configuration (non-persisted)
+
+    /// 事件缓冲区最大大小
+    public var maxBufferSize: Int = DebugProbeSettings.defaultMaxBufferSize
+
+    /// 是否启用事件持久化（断线时保存到本地，重连后恢复发送）
+    public var enablePersistence: Bool = true
+
+    /// 持久化队列最大大小
+    public var maxPersistenceQueueSize: Int = DebugProbeSettings.defaultMaxPersistenceQueueSize
+
+    /// 持久化事件最大保留天数
+    public var persistenceRetentionDays: Int = DebugProbeSettings.defaultPersistenceRetentionDays
 
     // MARK: - Properties
 
@@ -127,6 +150,60 @@ public final class DebugProbeSettings {
         set {
             userDefaults.set(newValue, forKey: Keys.verboseLogging)
             DebugLog.isEnabled = newValue
+        }
+    }
+
+    /// 是否在卡顿事件中捕获调用栈（默认 false）
+    /// 注意：启用会有一定性能开销，建议仅在调试时启用
+    public var captureStackTrace: Bool {
+        get {
+            userDefaults.bool(forKey: Keys.captureStackTrace)
+        }
+        set {
+            userDefaults.set(newValue, forKey: Keys.captureStackTrace)
+            notifyConfigChanged()
+        }
+    }
+
+    /// 网络捕获模式
+    ///
+    /// - `.automatic`（默认）: 自动拦截所有网络请求，无需修改业务代码
+    /// - `.manual`: 需要手动将 protocolClasses 注入到 URLSessionConfiguration
+    ///
+    /// 自动模式通过 Swizzle URLSessionConfiguration 实现，对 Alamofire、
+    /// 自定义 URLSession 等所有网络层都生效，是推荐的使用方式。
+    public var networkCaptureMode: NetworkCaptureMode {
+        get {
+            if let saved = userDefaults.string(forKey: Keys.networkCaptureMode),
+               let mode = NetworkCaptureMode(rawValue: saved) {
+                return mode
+            }
+            return .automatic
+        }
+        set {
+            userDefaults.set(newValue.rawValue, forKey: Keys.networkCaptureMode)
+            notifyConfigChanged()
+        }
+    }
+
+    /// 网络捕获范围
+    ///
+    /// - `.http`: 仅捕获 HTTP/HTTPS 请求
+    /// - `.webSocket`: 仅捕获 WebSocket 连接
+    /// - `.all`（默认）: 捕获所有网络活动
+    ///
+    /// WebSocket 捕获仅在 `.automatic` 模式下生效
+    public var networkCaptureScope: NetworkCaptureScope {
+        get {
+            let saved = userDefaults.integer(forKey: Keys.networkCaptureScope)
+            if saved > 0 {
+                return NetworkCaptureScope(rawValue: saved)
+            }
+            return .all
+        }
+        set {
+            userDefaults.set(newValue.rawValue, forKey: Keys.networkCaptureScope)
+            notifyConfigChanged()
         }
     }
 

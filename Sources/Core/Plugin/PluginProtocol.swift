@@ -11,7 +11,7 @@ import Foundation
 
 /// 内置插件 ID 常量
 public enum BuiltinPluginId {
-    public static let network = "network"
+    public static let http = "http"
     public static let log = "log"
     public static let database = "database"
     public static let webSocket = "websocket"

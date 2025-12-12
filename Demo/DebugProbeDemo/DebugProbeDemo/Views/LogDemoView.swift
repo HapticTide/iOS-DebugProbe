@@ -8,6 +8,17 @@
 import SwiftUI
 import DebugProbe
 import os.log
+#if canImport(CocoaLumberjack)
+import CocoaLumberjack
+import CocoaLumberjackSwift
+#endif
+
+// MARK: - OSLog Logger
+
+/// 自定义 OSLog Logger
+private let demoLogger = Logger(subsystem: "com.debugprobe.demo", category: "General")
+private let networkLogger = Logger(subsystem: "com.debugprobe.demo", category: "Network")
+private let uiLogger = Logger(subsystem: "com.debugprobe.demo", category: "UI")
 
 struct LogDemoView: View {
     @State private var customMessage = ""
@@ -17,7 +28,113 @@ struct LogDemoView: View {
     
     var body: some View {
         List {
-            // 快速日志
+            // os_log 示例
+            Section {
+                Button {
+                    logOSLogDebug()
+                } label: {
+                    HStack {
+                        Image(systemName: "apple.logo")
+                            .foregroundStyle(.blue)
+                        Text("os_log Debug")
+                    }
+                }
+                
+                Button {
+                    logOSLogInfo()
+                } label: {
+                    HStack {
+                        Image(systemName: "apple.logo")
+                            .foregroundStyle(.green)
+                        Text("os_log Info")
+                    }
+                }
+                
+                Button {
+                    logOSLogError()
+                } label: {
+                    HStack {
+                        Image(systemName: "apple.logo")
+                            .foregroundStyle(.red)
+                        Text("os_log Error")
+                    }
+                }
+                
+                Button {
+                    logOSLogNetwork()
+                } label: {
+                    HStack {
+                        Image(systemName: "network")
+                            .foregroundStyle(.purple)
+                        Text("os_log Network 请求")
+                    }
+                }
+            } header: {
+                Text("OSLog (iOS 14+)")
+            } footer: {
+                Text("使用 Apple 原生 os.log API，DebugProbe 自动捕获")
+            }
+            
+            #if canImport(CocoaLumberjack)
+            // CocoaLumberjack 示例
+            Section {
+                Button {
+                    logLumberjackVerbose()
+                } label: {
+                    HStack {
+                        Image(systemName: "tree.fill")
+                            .foregroundStyle(.gray)
+                        Text("DDLog Verbose")
+                    }
+                }
+                
+                Button {
+                    logLumberjackDebug()
+                } label: {
+                    HStack {
+                        Image(systemName: "tree.fill")
+                            .foregroundStyle(.blue)
+                        Text("DDLog Debug")
+                    }
+                }
+                
+                Button {
+                    logLumberjackInfo()
+                } label: {
+                    HStack {
+                        Image(systemName: "tree.fill")
+                            .foregroundStyle(.green)
+                        Text("DDLog Info")
+                    }
+                }
+                
+                Button {
+                    logLumberjackWarn()
+                } label: {
+                    HStack {
+                        Image(systemName: "tree.fill")
+                            .foregroundStyle(.yellow)
+                        Text("DDLog Warn")
+                    }
+                }
+                
+                Button {
+                    logLumberjackError()
+                } label: {
+                    HStack {
+                        Image(systemName: "tree.fill")
+                            .foregroundStyle(.red)
+                        Text("DDLog Error")
+                    }
+                }
+            } header: {
+                Text("CocoaLumberjack")
+            } footer: {
+                Text("需要添加 CocoaLumberjack 依赖并配置 DDLogProbeLogger")
+            }
+            #endif
+            
+            // 快速日志（DebugProbe 原生 API）
             Section {
                 Button {
                     logVerbose()
@@ -74,9 +191,9 @@ struct LogDemoView: View {
                     }
                 }
             } header: {
-                Text("快速日志")
+                Text("DebugProbe 原生 API")
             } footer: {
-                Text("点击按钮发送不同级别的日志")
+                Text("直接使用 DebugProbe.shared.log() 方法")
             }
             
             // 自定义日志
@@ -158,7 +275,58 @@ struct LogDemoView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
     
-    // MARK: - Quick Logs
+    // MARK: - OSLog Methods
+    
+    private func logOSLogDebug() {
+        demoLogger.debug("OSLog Debug: 这是一条 Debug 级别的日志，时间 \(Date())")
+    }
+    
+    private func logOSLogInfo() {
+        demoLogger.info("OSLog Info: 应用启动完成，版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown")")
+    }
+    
+    private func logOSLogError() {
+        demoLogger.error("OSLog Error: 发生了一个错误 - 数据解析失败")
+    }
+    
+    private func logOSLogNetwork() {
+        networkLogger.info("OSLog Network: 开始请求 https://api.example.com/users")
+        
+        // 模拟延迟后的响应
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            networkLogger.debug("OSLog Network: 请求发送成功，等待响应...")
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            networkLogger.info("OSLog Network: 收到响应，状态码 200")
+        }
+    }
+    
+    #if canImport(CocoaLumberjack)
+    // MARK: - CocoaLumberjack Methods
+    
+    private func logLumberjackVerbose() {
+        DDLogVerbose("CocoaLumberjack Verbose: 详细调试信息，时间 \(Date())")
+    }
+    
+    private func logLumberjackDebug() {
+        DDLogDebug("CocoaLumberjack Debug: 调试信息 - 用户点击了按钮")
+    }
+    
+    private func logLumberjackInfo() {
+        DDLogInfo("CocoaLumberjack Info: 用户已登录成功")
+    }
+    
+    private func logLumberjackWarn() {
+        DDLogWarn("CocoaLumberjack Warn: 磁盘空间不足，请清理缓存")
+    }
+    
+    private func logLumberjackError() {
+        DDLogError("CocoaLumberjack Error: 网络请求失败 - 服务器返回 500")
+    }
+    #endif
+    
+    // MARK: - DebugProbe Quick Logs
     
     private func logVerbose() {
         DebugProbe.shared.log(

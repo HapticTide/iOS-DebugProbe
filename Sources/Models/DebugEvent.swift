@@ -428,6 +428,8 @@ public struct PerformanceEvent: Codable, Sendable {
     public let jank: JankEventData?
     /// 告警事件（仅当 eventType == .alert 时有值）
     public let alert: AlertData?
+    /// App 启动时间（仅当 eventType == .appLaunch 时有值）
+    public let appLaunch: AppLaunchMetricsData?
 
     public init(
         id: String = UUID().uuidString,
@@ -435,7 +437,8 @@ public struct PerformanceEvent: Codable, Sendable {
         timestamp: Date = Date(),
         metrics: [PerformanceMetricsData]? = nil,
         jank: JankEventData? = nil,
-        alert: AlertData? = nil
+        alert: AlertData? = nil,
+        appLaunch: AppLaunchMetricsData? = nil
     ) {
         self.id = id
         self.eventType = eventType
@@ -443,6 +446,7 @@ public struct PerformanceEvent: Codable, Sendable {
         self.metrics = metrics
         self.jank = jank
         self.alert = alert
+        self.appLaunch = appLaunch
     }
 }
 
@@ -452,6 +456,7 @@ public enum PerformanceEventType: String, Codable, Sendable {
     case jank
     case alert
     case alertResolved
+    case appLaunch
 }
 
 /// 性能指标数据（用于事件传输）
@@ -460,17 +465,23 @@ public struct PerformanceMetricsData: Codable, Sendable {
     public let cpu: CPUMetricsData?
     public let memory: MemoryMetricsData?
     public let fps: FPSMetricsData?
+    public let network: NetworkTrafficMetricsData?
+    public let diskIO: DiskIOMetricsData?
 
     public init(
         timestamp: Date = Date(),
         cpu: CPUMetricsData? = nil,
         memory: MemoryMetricsData? = nil,
-        fps: FPSMetricsData? = nil
+        fps: FPSMetricsData? = nil,
+        network: NetworkTrafficMetricsData? = nil,
+        diskIO: DiskIOMetricsData? = nil
     ) {
         self.timestamp = timestamp
         self.cpu = cpu
         self.memory = memory
         self.fps = fps
+        self.network = network
+        self.diskIO = diskIO
     }
 }
 
@@ -573,5 +584,66 @@ public struct AlertData: Codable, Sendable {
         self.timestamp = timestamp
         self.isResolved = isResolved
         self.resolvedAt = resolvedAt
+    }
+}
+/// 网络流量指标数据（用于事件传输）
+public struct NetworkTrafficMetricsData: Codable, Sendable {
+    public let bytesReceived: UInt64
+    public let bytesSent: UInt64
+    public let receivedRate: Double
+    public let sentRate: Double
+
+    public init(bytesReceived: UInt64, bytesSent: UInt64, receivedRate: Double, sentRate: Double) {
+        self.bytesReceived = bytesReceived
+        self.bytesSent = bytesSent
+        self.receivedRate = receivedRate
+        self.sentRate = sentRate
+    }
+}
+
+/// 磁盘 I/O 指标数据（用于事件传输）
+public struct DiskIOMetricsData: Codable, Sendable {
+    public let readBytes: UInt64
+    public let writeBytes: UInt64
+    public let readOps: UInt64
+    public let writeOps: UInt64
+    public let readRate: Double
+    public let writeRate: Double
+
+    public init(readBytes: UInt64, writeBytes: UInt64, readOps: UInt64, writeOps: UInt64, readRate: Double, writeRate: Double) {
+        self.readBytes = readBytes
+        self.writeBytes = writeBytes
+        self.readOps = readOps
+        self.writeOps = writeOps
+        self.readRate = readRate
+        self.writeRate = writeRate
+    }
+}
+
+/// App 启动时间数据（用于事件传输，分阶段记录）
+public struct AppLaunchMetricsData: Codable, Sendable {
+    /// 总启动时间（毫秒）：从 processStart 到 firstFrameRendered
+    public let totalTime: Double
+    /// PreMain 阶段耗时（毫秒）：processStart -> mainExecuted
+    public let preMainTime: Double?
+    /// Main 到 Launch 阶段耗时（毫秒）：mainExecuted -> didFinishLaunching
+    public let mainToLaunchTime: Double?
+    /// Launch 到首帧阶段耗时（毫秒）：didFinishLaunching -> firstFrameRendered
+    public let launchToFirstFrameTime: Double?
+    /// 记录时间戳
+    public let timestamp: Date
+
+    public init(
+        totalTime: Double,
+        preMainTime: Double?,
+        mainToLaunchTime: Double?,
+        launchToFirstFrameTime: Double?,
+        timestamp: Date
+    ) {
+        self.totalTime = totalTime
+        self.preMainTime = preMainTime
+        self.mainToLaunchTime = mainToLaunchTime
+        self.launchToFirstFrameTime = launchToFirstFrameTime
+        self.timestamp = timestamp
     }
 }

@@ -16,7 +16,7 @@ public enum BuiltinPlugins {
     /// - Returns: 内置插件数组
     public static func createAll() -> [DebugProbePlugin] {
         [
-            NetworkPlugin(),
+            HttpPlugin(),
             LogPlugin(),
             WebSocketPlugin(),
             DatabasePlugin(),
@@ -38,8 +38,8 @@ public enum BuiltinPlugins {
     /// - Returns: 插件实例，不存在则返回 nil
     public static func create(pluginId: String) -> DebugProbePlugin? {
         switch pluginId {
-        case BuiltinPluginId.network:
-            NetworkPlugin()
+        case BuiltinPluginId.http:
+            HttpPlugin()
         case BuiltinPluginId.log:
             LogPlugin()
         case BuiltinPluginId.webSocket:
@@ -68,7 +68,7 @@ public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
     public let displayName: String = "Breakpoint"
     public let version: String = "1.0.0"
     public let pluginDescription: String = "HTTP 请求断点调试"
-    public let dependencies: [String] = [BuiltinPluginId.network]
+    public let dependencies: [String] = [BuiltinPluginId.http]
 
     public private(set) var state: PluginState = .uninitialized
     public private(set) var isEnabled: Bool = true
@@ -275,7 +275,7 @@ public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
     public let displayName: String = "Chaos"
     public let version: String = "1.0.0"
     public let pluginDescription: String = "网络故障注入与混沌测试"
-    public let dependencies: [String] = [BuiltinPluginId.network]
+    public let dependencies: [String] = [BuiltinPluginId.http]
 
     public private(set) var state: PluginState = .uninitialized
     public private(set) var isEnabled: Bool = true

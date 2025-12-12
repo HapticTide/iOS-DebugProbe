@@ -13,7 +13,7 @@
 import Foundation
 
 /// 网络捕获模式
-public enum NetworkCaptureMode {
+public enum NetworkCaptureMode: String {
     /// 自动模式（推荐）
     /// 通过 Swizzle URLSessionConfiguration 自动拦截所有网络请求
     /// 无需修改任何业务代码，对 Alamofire、自定义 URLSession 都生效
