@@ -29,6 +29,9 @@ public enum BridgeMessage: Codable {
     /// 插件状态变化通知
     case pluginStateChange(pluginId: String, isEnabled: Bool)
 
+    /// 设备信息更新（别名变更等）
+    case updateDeviceInfo(DeviceInfo)
+
     // MARK: - 服务端 -> 客户端
 
     /// 注册成功响应
@@ -78,6 +81,7 @@ public enum BridgeMessage: Codable {
         case breakpointHit
         case pluginEvent
         case pluginStateChange
+        case updateDeviceInfo
         case registered
         case updateMockRules
         case requestExport
@@ -113,6 +117,9 @@ public enum BridgeMessage: Codable {
         case .pluginStateChange:
             let payload = try container.decode(PluginStateChangePayload.self, forKey: .payload)
             self = .pluginStateChange(pluginId: payload.pluginId, isEnabled: payload.isEnabled)
+        case .updateDeviceInfo:
+            let deviceInfo = try container.decode(DeviceInfo.self, forKey: .payload)
+            self = .updateDeviceInfo(deviceInfo)
         case .registered:
             let payload = try container.decode(RegisteredPayload.self, forKey: .payload)
             self = .registered(sessionId: payload.sessionId)
@@ -170,6 +177,9 @@ public enum BridgeMessage: Codable {
         case let .pluginStateChange(pluginId, isEnabled):
             try container.encode(MessageType.pluginStateChange, forKey: .type)
             try container.encode(PluginStateChangePayload(pluginId: pluginId, isEnabled: isEnabled), forKey: .payload)
+        case let .updateDeviceInfo(deviceInfo):
+            try container.encode(MessageType.updateDeviceInfo, forKey: .type)
+            try container.encode(deviceInfo, forKey: .payload)
         case let .registered(sessionId):
             try container.encode(MessageType.registered, forKey: .type)
             try container.encode(RegisteredPayload(sessionId: sessionId), forKey: .payload)

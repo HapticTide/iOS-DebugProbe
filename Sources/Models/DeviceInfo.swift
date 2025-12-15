@@ -78,7 +78,8 @@ public enum DeviceInfoProvider {
             #endif
 
             let deviceId = device.identifierForVendor?.uuidString ?? UUID().uuidString
-            let deviceName = device.name
+            // 优先使用用户设置的设备别名，如果没有设置则使用系统设备名称
+            let deviceName = DebugProbeSettings.shared.deviceAlias ?? device.name
             let deviceModel = getDeviceModel()
             let systemName = device.systemName
             let systemVersion = device.systemVersion
@@ -89,7 +90,8 @@ public enum DeviceInfoProvider {
         #else
             let isSimulator = false
             let deviceId = UUID().uuidString
-            let deviceName = Host.current().localizedName ?? "Mac"
+            // macOS 上也支持设备别名
+            let deviceName = DebugProbeSettings.shared.deviceAlias ?? Host.current().localizedName ?? "Mac"
             let deviceModel = macDeviceModel()
             let systemName = "macOS"
             let systemVersion = ProcessInfo.processInfo.operatingSystemVersionString

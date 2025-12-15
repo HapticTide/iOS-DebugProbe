@@ -239,6 +239,28 @@ public final class DebugProbe {
         DebugLog.info("Reconnected to \(hubURL)")
     }
 
+    // MARK: - Device Info Update
+
+    /// 通知 DebugHub 设备信息已更新（如设备别名变更）
+    ///
+    /// 当用户在设置界面修改了设备别名后，调用此方法将更新实时同步到 WebUI。
+    /// 此方法不会重新建立连接，仅发送设备信息更新消息。
+    ///
+    /// 使用示例：
+    /// ```swift
+    /// // 在保存设备别名后调用
+    /// DebugProbeSettings.shared.deviceAlias = newAlias
+    /// DebugProbe.shared.notifyDeviceInfoChanged()
+    /// ```
+    public func notifyDeviceInfoChanged() {
+        guard isStarted else {
+            DebugLog.debug("Not started, cannot notify device info change")
+            return
+        }
+
+        bridgeClient.sendDeviceInfoUpdate()
+    }
+
     // MARK: - Capture Control (通过插件系统统一管理)
 
     /// 设置网络捕获是否启用

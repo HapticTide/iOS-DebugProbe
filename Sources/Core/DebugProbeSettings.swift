@@ -26,6 +26,7 @@ public final class DebugProbeSettings {
         static let networkCaptureMode = "DebugProbe.networkCaptureMode"
         static let networkCaptureScope = "DebugProbe.networkCaptureScope"
         static let pluginEnabledStates = "DebugProbe.pluginEnabledStates"
+        static let deviceAlias = "DebugProbe.deviceAlias"
     }
 
     // MARK: - Default Values
@@ -138,6 +139,25 @@ public final class DebugProbeSettings {
         }
         set {
             userDefaults.set(newValue, forKey: Keys.isEnabled)
+            notifyConfigChanged()
+        }
+    }
+
+    /// 设备别名（用户自定义设备名称）
+    /// 用于在多设备场景下区分设备
+    /// - 如果设置了别名，会优先使用别名作为设备名称
+    /// - 如果没有设置，则使用系统默认的设备名称
+    public var deviceAlias: String? {
+        get {
+            let alias = userDefaults.string(forKey: Keys.deviceAlias)
+            return alias?.isEmpty == true ? nil : alias
+        }
+        set {
+            if let value = newValue, !value.isEmpty {
+                userDefaults.set(value, forKey: Keys.deviceAlias)
+            } else {
+                userDefaults.removeObject(forKey: Keys.deviceAlias)
+            }
             notifyConfigChanged()
         }
     }

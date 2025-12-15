@@ -431,6 +431,19 @@ public final class DebugBridgeClient: NSObject {
         send(.register(deviceInfo, token: configuration.token, pluginStates: pluginStates))
     }
 
+    /// 发送设备信息更新（如别名变更）
+    /// 仅在已注册状态下发送，不会重新建立连接
+    public func sendDeviceInfoUpdate() {
+        guard state == .registered else {
+            DebugLog.debug(.bridge, "Not registered, ignoring device info update")
+            return
+        }
+
+        let deviceInfo = DeviceInfoProvider.current()
+        DebugLog.debug(.bridge, "Sending device info update: \(deviceInfo.deviceName)")
+        send(.updateDeviceInfo(deviceInfo))
+    }
+
     /// 发送心跳
     private func sendHeartbeat() {
         send(.heartbeat)
