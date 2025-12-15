@@ -136,6 +136,7 @@ public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
 
     public func pause() async {
         guard state == .running else { return }
+        isEnabled = false
         breakpointEngine.updateRules([])
         stateQueue.sync { state = .paused }
         context?.logInfo("BreakpointPlugin paused")
@@ -143,6 +144,7 @@ public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
 
     public func resume() async {
         guard state == .paused else { return }
+        isEnabled = true
         if let rules: [BreakpointRule] = context?.getConfiguration(for: "breakpoint.rules") {
             breakpointEngine.updateRules(rules)
         }
@@ -331,6 +333,7 @@ public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
 
     public func pause() async {
         guard state == .running else { return }
+        isEnabled = false
         chaosEngine.updateRules([])
         stateQueue.sync { state = .paused }
         context?.logInfo("ChaosPlugin paused")
@@ -338,6 +341,7 @@ public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
 
     public func resume() async {
         guard state == .paused else { return }
+        isEnabled = true
         if let rules: [ChaosRule] = context?.getConfiguration(for: "chaos.rules") {
             chaosEngine.updateRules(rules)
         }

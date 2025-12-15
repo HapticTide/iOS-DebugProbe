@@ -11,8 +11,8 @@ import Foundation
 public enum BridgeMessage: Codable {
     // MARK: - 客户端 -> 服务端
 
-    /// 设备注册
-    case register(DeviceInfo, token: String)
+    /// 设备注册（包含插件状态）
+    case register(DeviceInfo, token: String, pluginStates: [String: Bool])
 
     /// 心跳
     case heartbeat
@@ -25,6 +25,9 @@ public enum BridgeMessage: Codable {
 
     /// 插件事件上报
     case pluginEvent(PluginEvent)
+
+    /// 插件状态变化通知
+    case pluginStateChange(pluginId: String, isEnabled: Bool)
 
     // MARK: - 服务端 -> 客户端
 
@@ -74,6 +77,7 @@ public enum BridgeMessage: Codable {
         case events
         case breakpointHit
         case pluginEvent
+        case pluginStateChange
         case registered
         case updateMockRules
         case requestExport
@@ -94,7 +98,7 @@ public enum BridgeMessage: Codable {
         switch type {
         case .register:
             let payload = try container.decode(RegisterPayload.self, forKey: .payload)
-            self = .register(payload.deviceInfo, token: payload.token)
+            self = .register(payload.deviceInfo, token: payload.token, pluginStates: payload.pluginStates ?? [:])
         case .heartbeat:
             self = .heartbeat
         case .events:
@@ -106,6 +110,9 @@ public enum BridgeMessage: Codable {
         case .pluginEvent:
             let event = try container.decode(PluginEvent.self, forKey: .payload)
             self = .pluginEvent(event)
+        case .pluginStateChange:
+            let payload = try container.decode(PluginStateChangePayload.self, forKey: .payload)
+            self = .pluginStateChange(pluginId: payload.pluginId, isEnabled: payload.isEnabled)
         case .registered:
             let payload = try container.decode(RegisteredPayload.self, forKey: .payload)
             self = .registered(sessionId: payload.sessionId)
@@ -146,9 +153,9 @@ public enum BridgeMessage: Codable {
         var container = encoder.container(keyedBy: CodingKeys.self)
 
         switch self {
-        case let .register(deviceInfo, token):
+        case let .register(deviceInfo, token, pluginStates):
             try container.encode(MessageType.register, forKey: .type)
-            try container.encode(RegisterPayload(deviceInfo: deviceInfo, token: token), forKey: .payload)
+            try container.encode(RegisterPayload(deviceInfo: deviceInfo, token: token, pluginStates: pluginStates), forKey: .payload)
         case .heartbeat:
             try container.encode(MessageType.heartbeat, forKey: .type)
         case let .events(events):
@@ -160,6 +167,9 @@ public enum BridgeMessage: Codable {
         case let .pluginEvent(event):
             try container.encode(MessageType.pluginEvent, forKey: .type)
             try container.encode(event, forKey: .payload)
+        case let .pluginStateChange(pluginId, isEnabled):
+            try container.encode(MessageType.pluginStateChange, forKey: .type)
+            try container.encode(PluginStateChangePayload(pluginId: pluginId, isEnabled: isEnabled), forKey: .payload)
         case let .registered(sessionId):
             try container.encode(MessageType.registered, forKey: .type)
             try container.encode(RegisteredPayload(sessionId: sessionId), forKey: .payload)
@@ -202,6 +212,7 @@ public enum BridgeMessage: Codable {
 private struct RegisterPayload: Codable {
     let deviceInfo: DeviceInfo
     let token: String
+    let pluginStates: [String: Bool]? // 插件 ID -> 是否启用
 }
 
 private struct RegisteredPayload: Codable {
@@ -288,4 +299,10 @@ public struct BreakpointResumePayload: Codable {
         self.modifiedRequest = modifiedRequest
         self.modifiedResponse = modifiedResponse
     }
+}
+
+/// 插件状态变化 Payload
+struct PluginStateChangePayload: Codable {
+    let pluginId: String
+    let isEnabled: Bool
 }

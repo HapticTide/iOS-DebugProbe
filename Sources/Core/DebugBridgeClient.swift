@@ -385,6 +385,11 @@ public final class DebugBridgeClient: NSObject {
         send(.pluginEvent(event))
     }
 
+    /// 发送插件状态变化消息
+    public func sendPluginStateChange(pluginId: String, isEnabled: Bool) {
+        send(.pluginStateChange(pluginId: pluginId, isEnabled: isEnabled))
+    }
+
     private func send(_ message: BridgeMessage, completion: ((Error?) -> Void)? = nil) {
         do {
             let encoder = JSONEncoder()
@@ -415,8 +420,15 @@ public final class DebugBridgeClient: NSObject {
         hasRegistered = true
 
         let deviceInfo = DeviceInfoProvider.current()
-        DebugLog.debug(.bridge, "Sending register request for device: \(deviceInfo.deviceId)")
-        send(.register(deviceInfo, token: configuration.token))
+
+        // 获取所有插件的启用状态
+        var pluginStates: [String: Bool] = [:]
+        for plugin in PluginManager.shared.getAllPlugins() {
+            pluginStates[plugin.pluginId] = plugin.isEnabled
+        }
+
+        DebugLog.debug(.bridge, "Sending register request for device: \(deviceInfo.deviceId), plugins: \(pluginStates)")
+        send(.register(deviceInfo, token: configuration.token, pluginStates: pluginStates))
     }
 
     /// 发送心跳

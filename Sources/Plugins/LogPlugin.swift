@@ -83,6 +83,7 @@ public final class LogPlugin: DebugProbePlugin, @unchecked Sendable {
     public func pause() async {
         guard state == .running else { return }
 
+        isEnabled = false
         stopLogCapture()
         stateQueue.sync { state = .paused }
         context?.logInfo("LogPlugin paused")
@@ -91,6 +92,7 @@ public final class LogPlugin: DebugProbePlugin, @unchecked Sendable {
     public func resume() async {
         guard state == .paused else { return }
 
+        isEnabled = true
         startLogCapture()
         stateQueue.sync { state = .running }
         context?.logInfo("LogPlugin resumed")

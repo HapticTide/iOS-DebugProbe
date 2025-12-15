@@ -34,6 +34,15 @@ public enum PluginState: String, Codable, Sendable {
     case error
 }
 
+/// 插件暂停来源
+/// 用于区分是 App 端禁用还是 WebUI 端暂停
+public enum PauseSource: String, Codable, Sendable {
+    /// App 端用户主动禁用
+    case app
+    /// WebUI 端暂停（不影响 App 端的启用状态）
+    case webUI
+}
+
 // MARK: - 插件事件
 
 /// 插件级别的事件封装
@@ -322,6 +331,8 @@ public struct PluginInfo: Codable, Sendable {
     public let dependencies: [String]
     public var state: PluginState
     public var isEnabled: Bool
+    /// 暂停来源（仅当 state == .paused 时有意义）
+    public var pauseSource: PauseSource?
 
     public init(from plugin: DebugProbePlugin) {
         pluginId = plugin.pluginId
@@ -331,5 +342,6 @@ public struct PluginInfo: Codable, Sendable {
         dependencies = plugin.dependencies
         state = plugin.state
         isEnabled = plugin.isEnabled
+        pauseSource = nil  // 将在 PluginManager 中设置
     }
 }

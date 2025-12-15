@@ -25,6 +25,7 @@ public final class DebugProbeSettings {
         static let captureStackTrace = "DebugProbe.captureStackTrace"
         static let networkCaptureMode = "DebugProbe.networkCaptureMode"
         static let networkCaptureScope = "DebugProbe.networkCaptureScope"
+        static let pluginEnabledStates = "DebugProbe.pluginEnabledStates"
     }
 
     // MARK: - Default Values
@@ -163,6 +164,34 @@ public final class DebugProbeSettings {
             userDefaults.set(newValue, forKey: Keys.captureStackTrace)
             notifyConfigChanged()
         }
+    }
+
+    // MARK: - Plugin States
+
+    /// 获取插件启用状态
+    /// - Parameter pluginId: 插件 ID
+    /// - Returns: 是否启用，如果没有保存过状态则返回 nil
+    public func getPluginEnabled(_ pluginId: String) -> Bool? {
+        guard let states = userDefaults.dictionary(forKey: Keys.pluginEnabledStates) as? [String: Bool] else {
+            return nil
+        }
+        return states[pluginId]
+    }
+
+    /// 设置插件启用状态
+    /// - Parameters:
+    ///   - pluginId: 插件 ID
+    ///   - enabled: 是否启用
+    public func setPluginEnabled(_ pluginId: String, enabled: Bool) {
+        var states = (userDefaults.dictionary(forKey: Keys.pluginEnabledStates) as? [String: Bool]) ?? [:]
+        states[pluginId] = enabled
+        userDefaults.set(states, forKey: Keys.pluginEnabledStates)
+    }
+
+    /// 获取所有插件启用状态
+    /// - Returns: 插件 ID 到启用状态的映射
+    public func getAllPluginStates() -> [String: Bool] {
+        (userDefaults.dictionary(forKey: Keys.pluginEnabledStates) as? [String: Bool]) ?? [:]
     }
 
     /// 网络捕获模式

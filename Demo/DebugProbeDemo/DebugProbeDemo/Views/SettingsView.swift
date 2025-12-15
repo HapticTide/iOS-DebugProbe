@@ -20,6 +20,8 @@ struct SettingsView: View {
     @State private var captureStackTrace: Bool = false
     @State private var connectionStatus: DebugProbeSettings.ConnectionStatusDetail?
     @State private var webUIPluginStates: [WebUIPluginState] = []
+    /// 插件列表刷新计数器（用于触发 View 刷新）
+    @State private var pluginRefreshCounter = 0
     
     var body: some View {
         List {
@@ -157,7 +159,7 @@ struct SettingsView: View {
             } header: {
                 Text("插件模块")
             } footer: {
-                Text("插件状态由 WebUI 统一控制，在 WebUI 中启用/禁用插件会同步到 SDK")
+                Text("使用开关控制各插件的启用状态。禁用后的插件将停止发送数据到 DebugHub，WebUI 中也无法打开对应功能。")
             }
             
             // MARK: - 6. 设备信息
@@ -233,6 +235,11 @@ struct SettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: WebUIPluginStateManager.stateDidChangeNotification)) { _ in
             loadWebUIPluginStates()
         }
+        .onReceive(NotificationCenter.default.publisher(for: PluginManager.pluginStateDidChangeNotification)) { _ in
+            // 插件状态变化时，刷新插件列表
+            // 通过触发 View 重新渲染来刷新 pluginInfos 计算属性
+            refreshPluginList()
+        }
     }
     
     // MARK: - Private Computed Properties
@@ -244,7 +251,9 @@ struct SettingsView: View {
     
     /// 从 PluginManager 获取所有插件信息
     private var pluginInfos: [PluginInfo] {
-        DebugProbe.shared.pluginManager.getAllPluginInfos()
+        // pluginRefreshCounter 变化会触发重新计算
+        _ = pluginRefreshCounter
+        return DebugProbe.shared.pluginManager.getAllPluginInfos()
     }
     
     // MARK: - Private Methods
@@ -295,6 +304,11 @@ struct SettingsView: View {
     private func loadWebUIPluginStates() {
         webUIPluginStates = WebUIPluginStateManager.shared.getAllStates()
     }
+
+    private func refreshPluginList() {
+        // 通过改变计数器触发 pluginInfos 重新计算
+        pluginRefreshCounter += 1
+    }
 }
 
 struct FeatureRow: View {
@@ -313,9 +327,16 @@ struct FeatureRow: View {
 
 // MARK: - PluginStatusRow
 
-/// 插件状态行（显示统一的运行状态）
+/// 插件状态行（带开关控制）
 struct PluginStatusRow: View {
     let pluginInfo: PluginInfo
+    @State private var isEnabled: Bool = true
+
+    /// App 端的开关状态（持久化的）
+    private var appSwitchEnabled: Bool {
+        // 从持久化设置读取，默认为 true
+        DebugProbeSettings.shared.getPluginEnabled(pluginInfo.pluginId) ?? true
+    }
 
     var body: some View {
         HStack {
@@ -330,40 +351,64 @@ struct PluginStatusRow: View {
                 .padding(.vertical, 2)
                 .background(stateColor.opacity(0.15))
                 .cornerRadius(4)
+            
+            // 开关控制（基于 App 端持久化设置）
+            Toggle("", isOn: $isEnabled)
+                .labelsHidden()
+                .onChange(of: isEnabled) { newValue in
+                    Task {
+                        await DebugProbe.shared.pluginManager.setPluginEnabled(pluginInfo.pluginId, enabled: newValue)
+                    }
+                }
+        }
+        .onAppear {
+            // 根据 App 端持久化设置初始化开关（不受 WebUI 影响）
+            isEnabled = appSwitchEnabled
         }
     }
 
     private var stateText: String {
+        // App 开关优先级最高
+        if !appSwitchEnabled {
+            return "已禁用"  // App 端禁用，无论 WebUI 如何
+        }
+        
         switch pluginInfo.state {
         case .uninitialized:
-            "未初始化"
+            return "未初始化"
         case .starting:
-            "启动中"
+            return "启动中"
         case .running:
-            "运行中"
+            return "运行中"
         case .paused:
-            "已暂停"
+            // App 开关打开但被暂停，只可能是 WebUI 暂停
+            return "已暂停"
         case .stopping:
-            "停止中"
+            return "停止中"
         case .stopped:
-            "已禁用"
+            return "已停止"
         case .error:
-            "错误"
+            return "错误"
         }
     }
 
     private var stateColor: Color {
+        // App 开关优先级最高
+        if !appSwitchEnabled {
+            return .gray  // App 端禁用
+        }
+        
         switch pluginInfo.state {
         case .running:
-            .green
+            return .green
         case .paused:
-            .orange
+            return .orange  // WebUI 暂停
         case .error:
-            .red
+            return .red
         case .starting, .stopping:
-            .blue
+            return .blue
         case .uninitialized, .stopped:
-            .gray
+            return .gray
         }
     }
 }

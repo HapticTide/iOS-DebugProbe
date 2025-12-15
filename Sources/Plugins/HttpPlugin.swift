@@ -78,6 +78,7 @@ public final class HttpPlugin: DebugProbePlugin, @unchecked Sendable {
     public func pause() async {
         guard state == .running else { return }
 
+        isEnabled = false
         NetworkInstrumentation.shared.stop()
         stateQueue.sync { state = .paused }
         context?.logInfo("HttpPlugin paused")
@@ -86,6 +87,7 @@ public final class HttpPlugin: DebugProbePlugin, @unchecked Sendable {
     public func resume() async {
         guard state == .paused else { return }
 
+        isEnabled = true
         let scope: NetworkCaptureScope = httpOnly ? .http : .all
         NetworkInstrumentation.shared.start(mode: captureMode, scope: scope)
 

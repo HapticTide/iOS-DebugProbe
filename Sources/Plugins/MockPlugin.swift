@@ -69,6 +69,7 @@ public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
     public func pause() async {
         guard state == .running else { return }
 
+        isEnabled = false
         // 暂停时注销处理器（不清空规则，以便恢复时使用）
         unregisterMockHandlers()
 
@@ -79,6 +80,7 @@ public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
     public func resume() async {
         guard state == .paused else { return }
 
+        isEnabled = true
         // 恢复时重新注册处理器
         registerMockHandlers()
 

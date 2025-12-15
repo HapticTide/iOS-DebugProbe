@@ -75,6 +75,7 @@ public final class WebSocketPlugin: DebugProbePlugin, @unchecked Sendable {
     public func pause() async {
         guard state == .running else { return }
 
+        isEnabled = false
         WebSocketInstrumentation.shared.stop()
         stateQueue.sync { state = .paused }
         context?.logInfo("WebSocketPlugin paused")
@@ -83,6 +84,7 @@ public final class WebSocketPlugin: DebugProbePlugin, @unchecked Sendable {
     public func resume() async {
         guard state == .paused else { return }
 
+        isEnabled = true
         WebSocketInstrumentation.shared.start()
         stateQueue.sync { state = .running }
         context?.logInfo("WebSocketPlugin resumed")

@@ -49,6 +49,11 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
             self?.handlePluginCommandResponse(response)
         }
 
+        // 设置插件启用状态变化回调
+        pluginManager.onPluginEnabledStateChanged = { [weak self] pluginId, isEnabled in
+            self?.handlePluginEnabledStateChanged(pluginId: pluginId, isEnabled: isEnabled)
+        }
+
         // 订阅 BridgeClient 的命令回调
         bridgeClient?.onPluginCommandReceived = { [weak self] pluginId, commandType, payloadObject in
             Task {
@@ -80,6 +85,15 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
         }
 
         DebugLog.info(.plugin, "PluginBridgeAdapter setup completed")
+    }
+
+    // MARK: - Plugin State Change
+
+    /// 处理插件启用/禁用状态变化
+    /// 向 Hub 发送状态变化消息，以便 WebUI 可以实时同步
+    private func handlePluginEnabledStateChanged(pluginId: String, isEnabled: Bool) {
+        DebugLog.info(.plugin, "Plugin state changed: \(pluginId) -> \(isEnabled ? "enabled" : "disabled")")
+        bridgeClient?.sendPluginStateChange(pluginId: pluginId, isEnabled: isEnabled)
     }
 
     // MARK: - Event Handling
@@ -298,29 +312,22 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
                 isEnabled: isEnabled
             ))
 
-            // 同步 SDK 插件的启用/停止状态
-            // 当 WebUI 禁用插件时，SDK 也停止该插件的数据采集
-            syncPluginEnabledState(pluginId: pluginId, isEnabled: isEnabled)
+            // WebUI 的插件开关控制 SDK 端的暂停/恢复
+            // 但使用独立的方法，不会影响 App 端的禁用状态
+            syncPluginPausedByWebUI(pluginId: pluginId, paused: !isEnabled)
         }
 
         // 更新 WebUI 插件状态管理器
         WebUIPluginStateManager.shared.updateStates(states)
     }
 
-    /// 同步 SDK 插件的启用/停止状态
+    /// 同步 WebUI 端的插件暂停状态到 SDK
     /// - Parameters:
     ///   - pluginId: 插件 ID
-    ///   - isEnabled: 是否启用
-    private func syncPluginEnabledState(pluginId: String, isEnabled: Bool) {
-        // 获取当前 SDK 插件的启用状态
-        let currentEnabled = pluginManager.isPluginEnabled(pluginId)
-
-        // 如果状态不一致，同步到 SDK
-        if currentEnabled != isEnabled {
-            DebugLog.info(.plugin, "Syncing plugin state from WebUI: \(pluginId) -> \(isEnabled ? "enabled" : "disabled")")
-            Task {
-                await pluginManager.setPluginEnabled(pluginId, enabled: isEnabled)
-            }
+    ///   - paused: 是否暂停
+    private func syncPluginPausedByWebUI(pluginId: String, paused: Bool) {
+        Task {
+            await pluginManager.setPluginPausedByWebUI(pluginId, paused: paused)
         }
     }
 }

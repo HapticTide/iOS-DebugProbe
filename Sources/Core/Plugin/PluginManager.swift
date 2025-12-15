@@ -15,6 +15,12 @@ public final class PluginManager: @unchecked Sendable {
 
     public static let shared = PluginManager()
 
+    // MARK: - Notifications
+
+    /// 插件状态变化通知
+    /// userInfo 包含 "pluginId": String, "state": PluginState
+    public static let pluginStateDidChangeNotification = Notification.Name("DebugProbe.pluginStateDidChange")
+
     // MARK: - Properties
 
     /// 已注册的插件
@@ -32,6 +38,10 @@ public final class PluginManager: @unchecked Sendable {
     /// 是否已启动
     public private(set) var isStarted: Bool = false
 
+    /// 插件暂停来源映射（pluginId -> PauseSource）
+    /// 用于区分是 App 端禁用还是 WebUI 端暂停
+    private var pauseSources: [String: PauseSource] = [:]
+
     // MARK: - Callbacks
 
     /// 插件状态变化回调
@@ -42,6 +52,26 @@ public final class PluginManager: @unchecked Sendable {
 
     /// 插件命令响应回调
     public var onPluginCommandResponse: ((PluginCommandResponse) -> Void)?
+
+    /// 插件启用/禁用状态变化回调（用于通知 Hub）
+    public var onPluginEnabledStateChanged: ((String, Bool) -> Void)?
+
+    // MARK: - Internal Methods
+
+    /// 通知插件状态变化（同时触发回调和发送通知）
+    private func notifyPluginStateChanged(_ pluginId: String, state: PluginState) {
+        // 触发回调
+        onPluginStateChanged?(pluginId, state)
+
+        // 发送通知（在主线程）
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: PluginManager.pluginStateDidChangeNotification,
+                object: self,
+                userInfo: ["pluginId": pluginId, "state": state]
+            )
+        }
+    }
 
     // MARK: - Lifecycle
 
@@ -104,7 +134,19 @@ public final class PluginManager: @unchecked Sendable {
 
     /// 获取所有插件信息
     public func getAllPluginInfos() -> [PluginInfo] {
-        getAllPlugins().map { PluginInfo(from: $0) }
+        getAllPlugins().map { plugin in
+            var info = PluginInfo(from: plugin)
+            // 设置暂停来源
+            if plugin.state == .paused {
+                info.pauseSource = withLock { pauseSources[plugin.pluginId] }
+            }
+            return info
+        }
+    }
+
+    /// 获取插件的暂停来源
+    public func getPauseSource(for pluginId: String) -> PauseSource? {
+        withLock { pauseSources[pluginId] }
     }
 
     // MARK: - Lifecycle Management
@@ -128,6 +170,15 @@ public final class PluginManager: @unchecked Sendable {
             }
         )
 
+        // 加载保存的插件启用状态
+        let savedStates = DebugProbeSettings.shared.getAllPluginStates()
+
+        // 在初始化前，将保存的状态写入配置上下文
+        // 这样插件在 initialize() 中可以读取并应用保存的状态
+        for (pluginId, enabled) in savedStates {
+            context?.setConfiguration(enabled, for: "\(pluginId).enabled")
+        }
+
         // 拓扑排序确定启动顺序
         try resolveStartOrder()
 
@@ -135,19 +186,26 @@ public final class PluginManager: @unchecked Sendable {
         for pluginId in startOrder {
             guard let plugin = plugins[pluginId], let context else { continue }
 
-            DebugLog.info(.plugin, "Starting plugin: \(pluginId)")
+            DebugLog.info(.plugin, "Initializing plugin: \(pluginId)")
 
-            // 初始化
+            // 初始化（插件会从配置中读取 enabled 状态）
             plugin.initialize(context: context)
+
+            // 检查保存的状态，如果保存状态为禁用，则不启动
+            if let savedEnabled = savedStates[pluginId], !savedEnabled {
+                DebugLog.info(.plugin, "Plugin \(pluginId) is disabled by saved state, skipping start")
+                // 插件已在 initialize() 中设置 isEnabled = false
+                continue
+            }
 
             // 启动
             do {
                 try await plugin.start()
                 DebugLog.info(.plugin, "Plugin started: \(pluginId)")
-                onPluginStateChanged?(pluginId, .running)
+                notifyPluginStateChanged(pluginId, state: .running)
             } catch {
                 DebugLog.error(.plugin, "Failed to start plugin \(pluginId): \(error)")
-                onPluginStateChanged?(pluginId, .error)
+                notifyPluginStateChanged(pluginId, state: .error)
                 throw PluginError.startFailed(pluginId, error)
             }
         }
@@ -166,7 +224,7 @@ public final class PluginManager: @unchecked Sendable {
 
             DebugLog.info(.plugin, "Stopping plugin: \(pluginId)")
             await plugin.stop()
-            onPluginStateChanged?(pluginId, .stopped)
+            notifyPluginStateChanged(pluginId, state: .stopped)
         }
 
         isStarted = false
@@ -179,7 +237,7 @@ public final class PluginManager: @unchecked Sendable {
         for pluginId in startOrder {
             guard let plugin = plugins[pluginId] else { continue }
             await plugin.pause()
-            onPluginStateChanged?(pluginId, .paused)
+            notifyPluginStateChanged(pluginId, state: .paused)
         }
     }
 
@@ -188,13 +246,13 @@ public final class PluginManager: @unchecked Sendable {
         for pluginId in startOrder {
             guard let plugin = plugins[pluginId] else { continue }
             await plugin.resume()
-            onPluginStateChanged?(pluginId, .running)
+            notifyPluginStateChanged(pluginId, state: .running)
         }
     }
 
     // MARK: - Plugin Control
 
-    /// 启用或禁用指定插件
+    /// 启用或禁用指定插件（App 端调用）
     /// - Parameters:
     ///   - pluginId: 插件 ID
     ///   - enabled: 是否启用
@@ -204,29 +262,80 @@ public final class PluginManager: @unchecked Sendable {
             return
         }
 
+        let previousEnabled = plugin.isEnabled
+
         if enabled {
             // 如果当前状态是 paused 或 stopped，则恢复/启动
             if plugin.state == .paused {
+                // 清除暂停来源
+                _ = withLock { pauseSources.removeValue(forKey: pluginId) }
                 await plugin.resume()
-                onPluginStateChanged?(pluginId, .running)
+                notifyPluginStateChanged(pluginId, state: .running)
             } else if plugin.state == .stopped {
                 do {
                     try await plugin.start()
-                    onPluginStateChanged?(pluginId, .running)
+                    notifyPluginStateChanged(pluginId, state: .running)
                 } catch {
                     DebugLog.error(.plugin, "Failed to start plugin \(pluginId): \(error)")
-                    onPluginStateChanged?(pluginId, .error)
+                    notifyPluginStateChanged(pluginId, state: .error)
                 }
             }
         } else {
             // 禁用插件（暂停而非完全停止，保留状态）
             if plugin.state == .running {
+                // 设置暂停来源为 App
+                withLock { pauseSources[pluginId] = .app }
                 await plugin.pause()
-                onPluginStateChanged?(pluginId, .paused)
+                notifyPluginStateChanged(pluginId, state: .paused)
             }
         }
 
-        DebugLog.info(.plugin, "Plugin \(pluginId) \(enabled ? "enabled" : "disabled")")
+        // 如果启用状态发生变化，通知 Hub 并保存到本地
+        let newEnabled = plugin.isEnabled
+        if previousEnabled != newEnabled {
+            // 持久化到 UserDefaults
+            DebugProbeSettings.shared.setPluginEnabled(pluginId, enabled: newEnabled)
+            // 通知 Hub
+            onPluginEnabledStateChanged?(pluginId, newEnabled)
+        }
+
+        DebugLog.info(.plugin, "Plugin \(pluginId) \(enabled ? "enabled" : "disabled") by App")
+    }
+
+    /// WebUI 暂停/恢复指定插件
+    /// 与 App 端禁用不同，WebUI 暂停不会影响持久化状态
+    /// - Parameters:
+    ///   - pluginId: 插件 ID
+    ///   - paused: 是否暂停
+    public func setPluginPausedByWebUI(_ pluginId: String, paused: Bool) async {
+        guard let plugin = getPlugin(pluginId: pluginId) else {
+            DebugLog.warning(.plugin, "Cannot set paused state: plugin not found: \(pluginId)")
+            return
+        }
+
+        // 如果插件已被 App 端禁用，WebUI 无法恢复
+        if !paused, let source = withLock({ pauseSources[pluginId] }), source == .app {
+            DebugLog.warning(.plugin, "Cannot resume plugin \(pluginId) by WebUI: disabled by App")
+            return
+        }
+
+        if paused {
+            // WebUI 暂停插件
+            if plugin.state == .running {
+                withLock { pauseSources[pluginId] = .webUI }
+                await plugin.pause()
+                notifyPluginStateChanged(pluginId, state: .paused)
+                DebugLog.info(.plugin, "Plugin \(pluginId) paused by WebUI")
+            }
+        } else {
+            // WebUI 恢复插件
+            if plugin.state == .paused, withLock({ pauseSources[pluginId] }) == .webUI {
+                _ = withLock { pauseSources.removeValue(forKey: pluginId) }
+                await plugin.resume()
+                notifyPluginStateChanged(pluginId, state: .running)
+                DebugLog.info(.plugin, "Plugin \(pluginId) resumed by WebUI")
+            }
+        }
     }
 
     /// 获取插件是否启用

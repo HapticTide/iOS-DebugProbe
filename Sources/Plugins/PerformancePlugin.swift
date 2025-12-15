@@ -104,12 +104,43 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
         guard phaseTimestamps[phase] == nil else { return }
 
         let now = CFAbsoluteTimeGetCurrent()
-        phaseTimestamps[phase] = now
+
+        // 对于 processStart，尝试使用系统真正的进程启动时间
+        if phase == .processStart {
+            if let processStartTime = getProcessStartTime() {
+                phaseTimestamps[phase] = processStartTime
+            } else {
+                phaseTimestamps[phase] = now
+            }
+        } else {
+            phaseTimestamps[phase] = now
+        }
 
         // 当首帧渲染完成时，计算最终指标
         if phase == .firstFrameRendered {
             calculateLaunchMetrics()
         }
+    }
+
+    /// 获取进程真正的启动时间（CFAbsoluteTime）
+    /// 使用 sysctl 获取进程的 kinfo_proc 结构
+    private static func getProcessStartTime() -> CFAbsoluteTime? {
+        var kinfo = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
+
+        guard sysctl(&mib, UInt32(mib.count), &kinfo, &size, nil, 0) == 0 else {
+            return nil
+        }
+
+        let startTime = kinfo.kp_proc.p_starttime
+        // timeval 转换为 CFAbsoluteTime
+        // CFAbsoluteTime 是从 2001-01-01 00:00:00 UTC 开始的秒数
+        // timeval 是从 1970-01-01 00:00:00 UTC 开始的秒数
+        // 差值是 978307200 秒
+        let unixTime = Double(startTime.tv_sec) + Double(startTime.tv_usec) / 1_000_000
+        let cfAbsoluteTime = unixTime - 978307200
+        return cfAbsoluteTime
     }
 
     /// 兼容旧 API：记录 App 启动开始时间
@@ -146,7 +177,7 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
         var totalLaunchTime: Double?
 
         // PreMain: processStart -> mainExecuted
-        if let start = processStart, let main = mainExecuted {
+        if let start = processStart, let main = mainExecuted, main > start {
             preMainTime = (main - start) * 1000
         }
 
@@ -265,6 +296,7 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
     public func pause() async {
         guard state == .running else { return }
 
+        isEnabled = false
         stopSampleTimer()
         await MainActor.run {
             fpsMonitor?.stop()
@@ -278,6 +310,7 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
     public func resume() async {
         guard state == .paused else { return }
 
+        isEnabled = true
         startSampleTimer()
         await MainActor.run {
             fpsMonitor?.start()

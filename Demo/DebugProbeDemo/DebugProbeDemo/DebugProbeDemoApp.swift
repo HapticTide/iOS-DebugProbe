@@ -16,10 +16,12 @@ import CocoaLumberjackSwift
 struct DebugProbeDemoApp: App {
     
     init() {
+        // 记录 main() 执行阶段（SwiftUI App.init 早期，尽可能接近 main()）
+        // 注意：processStart 会自动使用系统进程启动时间
+        PerformancePlugin.recordLaunchPhase(.mainExecuted)
+        
         setupDebugProbe()
         // 记录 didFinishLaunching 完成（SwiftUI App.init 相当于 didFinishLaunching）
-        // 注意：processStart 阶段在首次访问 DebugProbe.shared 时自动记录
-        // mainExecuted 阶段在 SwiftUI 中无法精确获取，跳过
         PerformancePlugin.recordLaunchPhase(.didFinishLaunching)
     }
     
