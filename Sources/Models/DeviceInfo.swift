@@ -82,7 +82,8 @@ public enum DeviceInfoProvider {
             let deviceModel = getDeviceModel()
             let systemName = device.systemName
             let systemVersion = device.systemVersion
-            let platform = "iOS"
+            // 根据设备类型区分 iPadOS 和 iOS
+            let platform = device.userInterfaceIdiom == .pad ? "iPadOS" : "iOS"
             let appIcon = getAppIconBase64()
 
         #else
