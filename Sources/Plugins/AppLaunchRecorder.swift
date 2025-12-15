@@ -1,10 +1,11 @@
-// AppLaunchRecorder.swift
-// DebugProbe
+//  AppLaunchRecorder.swift
+//  DebugProbe
 //
-// 自动记录 App 启动开始时间
-// 使用静态初始化在模块加载时执行
+//  自动记录 App 启动开始时间
+//  使用静态初始化在模块加载时执行
 //
-// Created by AI Agent on 2025/12/12.
+//  Created by Sun on 2025/12/12.
+//  Copyright © 2025 Sun. All rights reserved.
 //
 
 import Foundation

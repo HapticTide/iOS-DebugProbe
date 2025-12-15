@@ -20,8 +20,8 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
 
     public let pluginId: String = BuiltinPluginId.performance
     public let displayName: String = "Performance"
-    public let version: String = "2.0.0"
-    public let pluginDescription: String = "App 性能监控（增强版）"
+    public let version: String = "1.0.0"
+    public let pluginDescription: String = "App 性能监控"
     public let dependencies: [String] = []
 
     // MARK: - State
