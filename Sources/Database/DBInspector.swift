@@ -86,11 +86,14 @@ public struct DBInfo: Codable, Sendable {
     public let descriptor: DatabaseDescriptor
     public let tableCount: Int
     public let fileSizeBytes: Int64?
+    /// 数据库文件的绝对路径
+    public let absolutePath: String?
 
-    public init(descriptor: DatabaseDescriptor, tableCount: Int, fileSizeBytes: Int64?) {
+    public init(descriptor: DatabaseDescriptor, tableCount: Int, fileSizeBytes: Int64?, absolutePath: String? = nil) {
         self.descriptor = descriptor
         self.tableCount = tableCount
         self.fileSizeBytes = fileSizeBytes
+        self.absolutePath = absolutePath
     }
 }
 

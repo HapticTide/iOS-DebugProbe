@@ -61,14 +61,16 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
                 results.append(DBInfo(
                     descriptor: descriptor,
                     tableCount: tableCount,
-                    fileSizeBytes: fileSize
+                    fileSizeBytes: fileSize,
+                    absolutePath: url.path
                 ))
             } catch {
                 // 如果无法打开数据库，仍然显示它但标记为不可用
                 results.append(DBInfo(
                     descriptor: descriptor,
                     tableCount: 0,
-                    fileSizeBytes: nil
+                    fileSizeBytes: nil,
+                    absolutePath: url.path
                 ))
             }
         }
