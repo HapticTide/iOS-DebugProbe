@@ -1513,59 +1513,225 @@ final class MemoryMonitor: @unchecked Sendable {
         }
 
         /// 捕获主线程调用栈
+        /// 注意：这个方法从 CADisplayLink 回调中调用，获取的是当前执行点的调用栈
+        /// 由于卡顿检测是在帧渲染结束后进行的，捕获的调用栈可能是渲染完成后的代码
+        /// 要获取真正导致卡顿的调用栈，需要使用更高级的方法（如 watchdog 线程）
         private static func captureMainThreadStackTrace() -> String? {
             // 使用 Thread.callStackSymbols 获取当前调用栈
             let symbols = Thread.callStackSymbols
 
-            // 过滤掉系统框架和 DebugProbe 自身的调用
-            let filtered = symbols.dropFirst(2).prefix(20).filter { symbol in
-                !symbol.contains("DebugProbe") &&
-                    !symbol.contains("CoreFoundation") &&
-                    !symbol.contains("UIKitCore") &&
-                    !symbol.contains("GraphicsServices") &&
-                    !symbol.contains("libdyld")
-            }
+            guard !symbols.isEmpty else { return nil }
 
-            guard !filtered.isEmpty else { return nil }
+            // 需要过滤的系统框架和 DebugProbe 内部代码
+            let systemFrameworks = [
+                "DebugProbe",
+                "CoreFoundation",
+                "UIKitCore",
+                "UIKit",
+                "GraphicsServices",
+                "libdyld",
+                "libsystem",
+                "libSystem",
+                "QuartzCore",
+                "CoreAnimation",
+                "Foundation",
+                "libdispatch",
+                "libobjc",
+                "AttributeGraph",
+                "SwiftUI",
+                "Combine",
+            ]
 
-            // 简化符号格式
-            let simplified = filtered.map { symbol -> String in
-                // 原始格式: "4   MyApp    0x0000000100001234 $s5MyApp..."
-                let parts = symbol.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
-                if parts.count >= 4 {
-                    let module = String(parts[1])
-                    let address = String(parts[2])
-                    var symbolName = String(parts[3])
-
-                    // 尝试 demangle Swift 符号
-                    if symbolName.hasPrefix("$s") || symbolName.hasPrefix("_$s") {
-                        symbolName = Self.demangleSwiftSymbol(symbolName) ?? symbolName
-                    }
-
-                    return "\(module) \(address) \(symbolName)"
+            // 过滤系统框架，保留用户代码
+            // 跳过前 2 帧（captureMainThreadStackTrace 和 displayLinkCallback）
+            let filtered = symbols.dropFirst(2).prefix(40).filter { symbol in
+                !systemFrameworks.contains { framework in
+                    symbol.contains(framework)
                 }
-                return symbol
             }
 
-            return simplified.joined(separator: "\n")
+            // 如果过滤后为空，返回原始调用栈的前 20 帧（跳过前 2 帧）
+            let framesToFormat = filtered.isEmpty
+                ? Array(symbols.dropFirst(2).prefix(20))
+                : Array(filtered.prefix(25))
+
+            guard !framesToFormat.isEmpty else { return nil }
+
+            // 格式化符号
+            let formatted = framesToFormat.enumerated().map { index, symbol in
+                formatStackFrame(symbol, index: index)
+            }
+
+            return formatted.joined(separator: "\n")
         }
 
-        /// 简易 Swift 符号 demangle
-        private static func demangleSwiftSymbol(_ symbol: String) -> String? {
-            // 使用 dladdr 和 swift_demangle（如果可用）
-            // 这里提供一个简化的实现
-            var cleanSymbol = symbol
+        /// 格式化单个栈帧
+        private static func formatStackFrame(_ symbol: String, index: Int) -> String {
+            // 原始格式: "4   MyApp    0x0000000100001234 $s5MyApp..."
+            // 或: "4   MyApp    0x0000000100001234 _objc_msgSend + 68"
+            let parts = symbol.split(whereSeparator: { $0 == " " }).filter { !$0.isEmpty }
+            guard parts.count >= 4 else { return "\(index)  \(symbol)" }
 
-            // 移除前缀
-            if cleanSymbol.hasPrefix("_$s") {
-                cleanSymbol = String(cleanSymbol.dropFirst(3))
-            } else if cleanSymbol.hasPrefix("$s") {
-                cleanSymbol = String(cleanSymbol.dropFirst(2))
+            let module = String(parts[1])
+            let remaining = parts.dropFirst(3).map(String.init).joined(separator: " ")
+
+            // 尝试 demangle 符号
+            let demangled = demangleSymbol(remaining)
+
+            // 简化输出格式，更易读
+            // 格式: 序号  模块名  解析后的符号
+            return String(format: "%2d  [%@] %@", index, module, demangled)
+        }
+
+        /// 符号缓存，避免重复 demangle
+        private static var demangleCache: [String: String] = [:]
+        private static let demangleCacheLock = NSLock()
+
+        /// 解析符号名（支持 Swift 和 ObjC）
+        private static func demangleSymbol(_ symbol: String) -> String {
+            // 检查缓存
+            demangleCacheLock.lock()
+            if let cached = demangleCache[symbol] {
+                demangleCacheLock.unlock()
+                return cached
+            }
+            demangleCacheLock.unlock()
+
+            let result: String
+
+            // Swift 符号以 $s、_$s、$S 或 _$S 开头
+            if symbol.hasPrefix("$s") || symbol.hasPrefix("_$s") ||
+               symbol.hasPrefix("$S") || symbol.hasPrefix("_$S") {
+                result = demangleSwiftSymbol(symbol) ?? symbol
+            } else if symbol.hasPrefix("-[") || symbol.hasPrefix("+[") {
+                // ObjC 符号通常格式为 "-[Class method]" 或 "+[Class method]"
+                result = symbol
+            } else if let plusIndex = symbol.lastIndex(of: "+") {
+                // C 函数格式 "function_name + offset"
+                let functionPart = symbol[..<plusIndex].trimmingCharacters(in: .whitespaces)
+                let offsetPart = symbol[symbol.index(after: plusIndex)...].trimmingCharacters(in: .whitespaces)
+                result = "\(functionPart) + \(offsetPart)"
+            } else {
+                result = symbol
             }
 
-            // 基础解析：提取模块和函数名
-            // 完整的 demangle 需要使用 swift_demangle 函数
-            return cleanSymbol.count > 50 ? String(cleanSymbol.prefix(50)) + "..." : cleanSymbol
+            // 缓存结果（限制缓存大小）
+            demangleCacheLock.lock()
+            if demangleCache.count < 1000 {
+                demangleCache[symbol] = result
+            }
+            demangleCacheLock.unlock()
+
+            return result
+        }
+
+        /// Swift 符号 demangle
+        /// 使用私有 API swift_demangle 进行解码
+        private static func demangleSwiftSymbol(_ symbol: String) -> String? {
+            // 尝试使用 Swift 运行时的 demangle 函数
+            if let demangled = _stdlib_demangleImpl(symbol),
+               !demangled.isEmpty,
+               demangled != symbol {
+                // 简化输出：移除泛型参数中的完整模块路径
+                return simplifySwiftSymbol(demangled)
+            }
+
+            // 回退：手动解析简单的 Swift 符号
+            return manualDemangleSwift(symbol)
+        }
+
+        /// 简化 Swift 符号，移除不必要的细节
+        private static func simplifySwiftSymbol(_ symbol: String) -> String {
+            var result = symbol
+
+            // 移除 @objc 包装
+            if result.hasPrefix("@objc ") {
+                result = String(result.dropFirst(6))
+            }
+
+            // 简化常见的泛型类型
+            result = result.replacingOccurrences(of: "Swift.Optional<", with: "Optional<")
+            result = result.replacingOccurrences(of: "Swift.Array<", with: "Array<")
+            result = result.replacingOccurrences(of: "Swift.Dictionary<", with: "Dictionary<")
+            result = result.replacingOccurrences(of: "Swift.String", with: "String")
+            result = result.replacingOccurrences(of: "Swift.Int", with: "Int")
+            result = result.replacingOccurrences(of: "Swift.Bool", with: "Bool")
+
+            return result
+        }
+
+        /// 调用 Swift 运行时的 demangle 函数
+        private static func _stdlib_demangleImpl(_ mangledName: String) -> String? {
+            // swift_demangle 是 Swift 运行时的私有函数
+            // 函数签名: char *swift_demangle(const char *mangledName, size_t mangledNameLength, char *outputBuffer, size_t *outputBufferSize, uint32_t flags)
+
+            typealias SwiftDemangle = @convention(c) (
+                UnsafePointer<CChar>?,
+                Int,
+                UnsafeMutablePointer<CChar>?,
+                UnsafeMutablePointer<Int>?,
+                UInt32
+            ) -> UnsafeMutablePointer<CChar>?
+
+            // 获取 swift_demangle 函数指针
+            guard let handle = dlopen(nil, RTLD_NOW) else { return nil }
+            defer { dlclose(handle) }
+
+            guard let sym = dlsym(handle, "swift_demangle") else { return nil }
+            let demangle = unsafeBitCast(sym, to: SwiftDemangle.self)
+
+            // 调用 demangle
+            let result = mangledName.withCString { cString -> String? in
+                guard let demangled = demangle(cString, mangledName.utf8.count, nil, nil, 0) else {
+                    return nil
+                }
+                defer { free(demangled) }
+                return String(cString: demangled)
+            }
+
+            return result
+        }
+
+        /// 手动解析简单的 Swift 符号
+        private static func manualDemangleSwift(_ symbol: String) -> String? {
+            var s = symbol
+
+            // 移除前缀
+            if s.hasPrefix("_$s") {
+                s = String(s.dropFirst(3))
+            } else if s.hasPrefix("$s") {
+                s = String(s.dropFirst(2))
+            } else {
+                return nil
+            }
+
+            // 尝试提取模块名和函数名
+            // Swift mangled name 格式较复杂，这里只做简单提取
+            var result: [String] = []
+
+            // 查找数字前缀（表示名称长度）
+            var index = s.startIndex
+            while index < s.endIndex {
+                // 读取数字
+                var numStr = ""
+                while index < s.endIndex, s[index].isNumber {
+                    numStr.append(s[index])
+                    index = s.index(after: index)
+                }
+
+                guard let length = Int(numStr), length > 0 else { break }
+                guard s.distance(from: index, to: s.endIndex) >= length else { break }
+
+                let endIndex = s.index(index, offsetBy: length)
+                let name = String(s[index ..< endIndex])
+                result.append(name)
+                index = endIndex
+            }
+
+            guard result.count >= 2 else { return nil }
+
+            // 格式化输出：Module.Function
+            return result.joined(separator: ".")
         }
     }
 
