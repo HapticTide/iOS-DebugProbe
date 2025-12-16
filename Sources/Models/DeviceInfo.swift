@@ -14,7 +14,10 @@ import Foundation
 /// 设备信息模型，用于向 Debug Hub 注册设备
 public struct DeviceInfo: Codable {
     public let deviceId: String
+    /// 原始设备名称（系统设备名）
     public let deviceName: String
+    /// 用户设置的设备别名（可选）
+    public let deviceAlias: String?
     public let deviceModel: String
     public let systemName: String
     public let systemVersion: String
@@ -28,6 +31,7 @@ public struct DeviceInfo: Codable {
     public init(
         deviceId: String,
         deviceName: String,
+        deviceAlias: String? = nil,
         deviceModel: String,
         systemName: String,
         systemVersion: String,
@@ -40,6 +44,7 @@ public struct DeviceInfo: Codable {
     ) {
         self.deviceId = deviceId
         self.deviceName = deviceName
+        self.deviceAlias = deviceAlias
         self.deviceModel = deviceModel
         self.systemName = systemName
         self.systemVersion = systemVersion
@@ -78,8 +83,10 @@ public enum DeviceInfoProvider {
             #endif
 
             let deviceId = device.identifierForVendor?.uuidString ?? UUID().uuidString
-            // 优先使用用户设置的设备别名，如果没有设置则使用系统设备名称
-            let deviceName = DebugProbeSettings.shared.deviceAlias ?? device.name
+            // deviceName 始终使用系统设备名称
+            let deviceName = device.name
+            // deviceAlias 为用户设置的别名
+            let deviceAlias = DebugProbeSettings.shared.deviceAlias
             let deviceModel = getDeviceModel()
             let systemName = device.systemName
             let systemVersion = device.systemVersion
@@ -90,8 +97,9 @@ public enum DeviceInfoProvider {
         #else
             let isSimulator = false
             let deviceId = UUID().uuidString
-            // macOS 上也支持设备别名
-            let deviceName = DebugProbeSettings.shared.deviceAlias ?? Host.current().localizedName ?? "Mac"
+            // macOS 上 deviceName 使用系统名称，deviceAlias 为用户设置的别名
+            let deviceName = Host.current().localizedName ?? "Mac"
+            let deviceAlias = DebugProbeSettings.shared.deviceAlias
             let deviceModel = macDeviceModel()
             let systemName = "macOS"
             let systemVersion = ProcessInfo.processInfo.operatingSystemVersionString
@@ -102,6 +110,7 @@ public enum DeviceInfoProvider {
         return DeviceInfo(
             deviceId: deviceId,
             deviceName: deviceName,
+            deviceAlias: deviceAlias,
             deviceModel: deviceModel,
             systemName: systemName,
             systemVersion: systemVersion,
