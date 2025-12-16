@@ -312,13 +312,16 @@ public final class PluginManager: @unchecked Sendable {
         var newState: PluginState?
 
         if enabled {
-            // 如果当前状态是 paused 或 stopped，则恢复/启动
-            if plugin.state == .paused {
-                // 清除暂停来源
+            // 根据当前状态决定如何启用插件
+            switch plugin.state {
+            case .paused:
+                // 从暂停状态恢复
                 _ = withLock { pauseSources.removeValue(forKey: pluginId) }
                 await plugin.resume()
                 newState = .running
-            } else if plugin.state == .stopped {
+
+            case .stopped, .uninitialized:
+                // 从停止或未初始化状态启动
                 do {
                     try await plugin.start()
                     newState = .running
@@ -326,6 +329,10 @@ public final class PluginManager: @unchecked Sendable {
                     DebugLog.error(.plugin, "Failed to start plugin \(pluginId): \(error)")
                     newState = .error
                 }
+
+            case .running, .starting, .stopping, .error:
+                // 已经在运行或正在转换状态，不需要操作
+                break
             }
 
             // 启用父插件时，同时启用所有子插件
@@ -375,11 +382,13 @@ public final class PluginManager: @unchecked Sendable {
         let previousEnabled = plugin.isEnabled
         var newState: PluginState?
 
-        if plugin.state == .paused {
+        switch plugin.state {
+        case .paused:
             _ = withLock { pauseSources.removeValue(forKey: pluginId) }
             await plugin.resume()
             newState = .running
-        } else if plugin.state == .stopped {
+
+        case .stopped, .uninitialized:
             do {
                 try await plugin.start()
                 newState = .running
@@ -387,6 +396,9 @@ public final class PluginManager: @unchecked Sendable {
                 DebugLog.error(.plugin, "Failed to start child plugin \(pluginId): \(error)")
                 newState = .error
             }
+
+        case .running, .starting, .stopping, .error:
+            break
         }
 
         let newEnabled = plugin.isEnabled
