@@ -7,16 +7,16 @@
 // Mock 规则引擎 - 提供规则存储、匹配和应用逻辑
 //
 // *** 架构说明 ***
-// 此引擎作为 MockPlugin 的内部实现使用，不直接对外暴露
+// 此引擎作为 HttpMockPlugin 的内部实现使用，不直接对外暴露
 // 插件架构：
-//   1. MockPlugin 在 start() 时注册 EventCallbacks 处理器
+//   1. HttpMockPlugin 在 start() 时注册 EventCallbacks 处理器
 //   2. CaptureURLProtocol 通过 EventCallbacks 调用 Mock 处理
 //   3. 处理器内部委托给 MockRuleEngine.shared 执行实际逻辑
 //
 // 事件流：
 //   CaptureURLProtocol
 //     → EventCallbacks.mockHTTPRequest()
-//     → MockPlugin handler
+//     → HttpMockPlugin handler
 //     → MockRuleEngine.shared.processHTTPRequest()
 //
 

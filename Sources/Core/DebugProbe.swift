@@ -18,6 +18,7 @@ public final class DebugProbe {
     }()
 
     // MARK: - Versions
+
     public static var version: String { "1.4.0" }
 
     // MARK: - Notifications
@@ -477,9 +478,9 @@ public extension DebugProbe {
         try? pluginManager.register(plugin: PerformancePlugin())
 
         // 注册调试工具插件
-        try? pluginManager.register(plugin: MockPlugin())
-        try? pluginManager.register(plugin: BreakpointPlugin())
-        try? pluginManager.register(plugin: ChaosPlugin())
+        try? pluginManager.register(plugin: HttpMockPlugin())
+        try? pluginManager.register(plugin: HttpBreakpointPlugin())
+        try? pluginManager.register(plugin: HttpChaosPlugin())
 
         DebugLog.info("[Plugin] \(pluginManager.getAllPlugins().count) builtin plugins registered")
     }

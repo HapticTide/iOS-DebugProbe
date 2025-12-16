@@ -239,8 +239,14 @@ extension URLSession {
         if let url = request.url {
             // 排除 DebugProbe 自己的 debug-bridge 连接
             if !url.absoluteString.contains("debug-bridge") {
-                let headers = request.allHTTPHeaderFields ?? [:]
-                WebSocketInstrumentation.shared.registerSession(task: task, url: url, headers: headers)
+                // 检查是否由 InstrumentedWebSocketClient 管理
+                // 如果是，跳过以避免重复创建会话
+                if request.value(forHTTPHeaderField: "X-DebugProbe-Instrumented") != nil {
+                    DebugLog.debug(.webSocket, "Skip instrumented connection: \(url.absoluteString)")
+                } else {
+                    let headers = request.allHTTPHeaderFields ?? [:]
+                    WebSocketInstrumentation.shared.registerSession(task: task, url: url, headers: headers)
+                }
             }
         }
 

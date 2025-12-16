@@ -20,9 +20,9 @@ public enum BuiltinPlugins {
             LogPlugin(),
             WebSocketPlugin(),
             DatabasePlugin(),
-            MockPlugin(),
-            BreakpointPlugin(),
-            ChaosPlugin(),
+            HttpMockPlugin(),
+            HttpBreakpointPlugin(),
+            HttpChaosPlugin(),
             PerformancePlugin(),
         ]
     }
@@ -47,11 +47,11 @@ public enum BuiltinPlugins {
         case BuiltinPluginId.database:
             DatabasePlugin()
         case BuiltinPluginId.mock:
-            MockPlugin()
+            HttpMockPlugin()
         case BuiltinPluginId.breakpoint:
-            BreakpointPlugin()
+            HttpBreakpointPlugin()
         case BuiltinPluginId.chaos:
-            ChaosPlugin()
+            HttpChaosPlugin()
         case BuiltinPluginId.performance:
             PerformancePlugin()
         default:

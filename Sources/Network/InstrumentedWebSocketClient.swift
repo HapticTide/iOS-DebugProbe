@@ -96,6 +96,10 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
+        // 标记此连接由 InstrumentedWebSocketClient 管理
+        // WebSocketInstrumentation 检测到此标识后会跳过拦截
+        request.setValue(sessionId, forHTTPHeaderField: "X-DebugProbe-Instrumented")
+
         // 如果有 subprotocols，通过 Sec-WebSocket-Protocol header 设置
         if !subprotocols.isEmpty {
             request.setValue(subprotocols.joined(separator: ", "), forHTTPHeaderField: "Sec-WebSocket-Protocol")
@@ -145,7 +149,7 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
     // MARK: - Internal Methods
 
     private func sendMessage(_ message: URLSessionWebSocketTask.Message, payload: Data, opcode: WSEvent.Frame.Opcode) {
-        // 通过 EventCallbacks 调用 MockPlugin 处理
+        // 通过 EventCallbacks 调用 HttpMockPlugin 处理
         let (modifiedPayload, isMocked, ruleId): (Data, Bool, String?) = EventCallbacks.mockWSOutgoingFrame?(
             payload,
             sessionId,
@@ -208,7 +212,7 @@ public final class InstrumentedWebSocketClient: NSObject, WebSocketClient {
             return
         }
 
-        // 通过 EventCallbacks 调用 MockPlugin 处理
+        // 通过 EventCallbacks 调用 HttpMockPlugin 处理
         let (modifiedPayload, isMocked, ruleId): (Data, Bool, String?) = EventCallbacks.mockWSIncomingFrame?(
             payload,
             sessionId,

@@ -1,5 +1,5 @@
 //
-//  BreakpointPlugin.swift
+//  HttpBreakpointPlugin.swift
 //  DebugProbe
 //
 //  Created by Sun on 2025/12/15.
@@ -8,10 +8,10 @@
 
 import Foundation
 
-// MARK: - Breakpoint Plugin
+// MARK: - Http Breakpoint Plugin
 
 /// 断点调试插件
-public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
+public final class HttpBreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
     public let pluginId: String = BuiltinPluginId.breakpoint
     public let displayName: String = "Breakpoint"
     public let version: String = "1.0.0"
@@ -34,7 +34,7 @@ public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
             isEnabled = enabled
         }
         state = .stopped
-        context.logInfo("BreakpointPlugin initialized")
+        context.logInfo("HttpBreakpointPlugin initialized")
     }
 
     public func start() async throws {
@@ -45,7 +45,7 @@ public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
         registerEventCallbacks()
 
         stateQueue.sync { state = .running }
-        context?.logInfo("BreakpointPlugin started")
+        context?.logInfo("HttpBreakpointPlugin started")
     }
 
     /// 注册 EventCallbacks 处理器
@@ -87,7 +87,7 @@ public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
         isEnabled = false
         breakpointEngine.updateRules([])
         stateQueue.sync { state = .paused }
-        context?.logInfo("BreakpointPlugin paused")
+        context?.logInfo("HttpBreakpointPlugin paused")
     }
 
     public func resume() async {
@@ -97,7 +97,7 @@ public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
             breakpointEngine.updateRules(rules)
         }
         stateQueue.sync { state = .running }
-        context?.logInfo("BreakpointPlugin resumed")
+        context?.logInfo("HttpBreakpointPlugin resumed")
     }
 
     public func stop() async {
@@ -109,7 +109,7 @@ public final class BreakpointPlugin: DebugProbePlugin, @unchecked Sendable {
         unregisterEventCallbacks()
 
         stateQueue.sync { state = .stopped }
-        context?.logInfo("BreakpointPlugin stopped")
+        context?.logInfo("HttpBreakpointPlugin stopped")
     }
 
     public func handleCommand(_ command: PluginCommand) async {

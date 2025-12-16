@@ -1,4 +1,4 @@
-// MockPlugin.swift
+// HttpMockPlugin.swift
 // DebugProbe
 //
 // Created by Sun on 2025/12/09.
@@ -7,11 +7,11 @@
 
 import Foundation
 
-// MARK: - Mock Plugin
+// MARK: - Http Mock Plugin
 
 /// Mock 规则插件
 /// 负责管理和应用 HTTP Mock 规则
-public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
+public final class HttpMockPlugin: DebugProbePlugin, @unchecked Sendable {
     // MARK: - Plugin Metadata
 
     public let pluginId: String = BuiltinPluginId.mock
@@ -46,7 +46,7 @@ public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
         }
 
         state = .stopped
-        context.logInfo("MockPlugin initialized")
+        context.logInfo("HttpMockPlugin initialized")
     }
 
     public func start() async throws {
@@ -63,7 +63,7 @@ public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
         }
 
         stateQueue.sync { state = .running }
-        context?.logInfo("MockPlugin started")
+        context?.logInfo("HttpMockPlugin started")
     }
 
     public func pause() async {
@@ -74,7 +74,7 @@ public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
         unregisterMockHandlers()
 
         stateQueue.sync { state = .paused }
-        context?.logInfo("MockPlugin paused")
+        context?.logInfo("HttpMockPlugin paused")
     }
 
     public func resume() async {
@@ -85,7 +85,7 @@ public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
         registerMockHandlers()
 
         stateQueue.sync { state = .running }
-        context?.logInfo("MockPlugin resumed")
+        context?.logInfo("HttpMockPlugin resumed")
     }
 
     public func stop() async {
@@ -98,7 +98,7 @@ public final class MockPlugin: DebugProbePlugin, @unchecked Sendable {
         ruleEngine.updateRules([])
 
         stateQueue.sync { state = .stopped }
-        context?.logInfo("MockPlugin stopped")
+        context?.logInfo("HttpMockPlugin stopped")
     }
 
     public func handleCommand(_ command: PluginCommand) async {

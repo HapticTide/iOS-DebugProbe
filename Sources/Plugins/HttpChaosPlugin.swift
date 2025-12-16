@@ -1,5 +1,5 @@
 //
-//  ChaosPlugin.swift
+//  HttpChaosPlugin.swift
 //  DebugProbe
 //
 //  Created by Sun on 2025/12/15.
@@ -8,10 +8,10 @@
 
 import Foundation
 
-// MARK: - Chaos Plugin
+// MARK: - Http Chaos Plugin
 
 /// 故障注入插件
-public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
+public final class HttpChaosPlugin: DebugProbePlugin, @unchecked Sendable {
     public let pluginId: String = BuiltinPluginId.chaos
     public let displayName: String = "Chaos"
     public let version: String = "1.0.0"
@@ -34,7 +34,7 @@ public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
             isEnabled = enabled
         }
         state = .stopped
-        context.logInfo("ChaosPlugin initialized")
+        context.logInfo("HttpChaosPlugin initialized")
     }
 
     public func start() async throws {
@@ -45,7 +45,7 @@ public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
         registerEventCallbacks()
 
         stateQueue.sync { state = .running }
-        context?.logInfo("ChaosPlugin started")
+        context?.logInfo("HttpChaosPlugin started")
     }
 
     /// 注册 EventCallbacks 处理器
@@ -75,7 +75,7 @@ public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
         isEnabled = false
         chaosEngine.updateRules([])
         stateQueue.sync { state = .paused }
-        context?.logInfo("ChaosPlugin paused")
+        context?.logInfo("HttpChaosPlugin paused")
     }
 
     public func resume() async {
@@ -85,7 +85,7 @@ public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
             chaosEngine.updateRules(rules)
         }
         stateQueue.sync { state = .running }
-        context?.logInfo("ChaosPlugin resumed")
+        context?.logInfo("HttpChaosPlugin resumed")
     }
 
     public func stop() async {
@@ -97,7 +97,7 @@ public final class ChaosPlugin: DebugProbePlugin, @unchecked Sendable {
         unregisterEventCallbacks()
 
         stateQueue.sync { state = .stopped }
-        context?.logInfo("ChaosPlugin stopped")
+        context?.logInfo("HttpChaosPlugin stopped")
     }
 
     public func handleCommand(_ command: PluginCommand) async {

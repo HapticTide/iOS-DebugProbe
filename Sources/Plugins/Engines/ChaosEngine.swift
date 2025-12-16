@@ -7,16 +7,16 @@
 // 故障注入引擎 - 提供规则存储、匹配和混沌注入逻辑
 //
 // *** 架构说明 ***
-// 此引擎作为 ChaosPlugin 的内部实现使用，不直接对外暴露
+// 此引擎作为 HttpChaosPlugin 的内部实现使用，不直接对外暴露
 // 插件架构：
-//   1. ChaosPlugin 在 start() 时注册 EventCallbacks 处理器
+//   1. HttpChaosPlugin 在 start() 时注册 EventCallbacks 处理器
 //   2. CaptureURLProtocol 通过 EventCallbacks 调用故障评估
 //   3. 处理器内部委托给 ChaosEngine.shared 执行实际逻辑
 //
 // 事件流：
 //   CaptureURLProtocol
 //     → EventCallbacks.chaosEvaluate()
-//     → ChaosPlugin handler
+//     → HttpChaosPlugin handler
 //     → ChaosEngine.shared.evaluate()
 //
 
