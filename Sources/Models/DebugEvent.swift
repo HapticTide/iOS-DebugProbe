@@ -430,6 +430,8 @@ public struct PerformanceEvent: Codable, Sendable {
     public let alert: AlertData?
     /// App 启动时间（仅当 eventType == .appLaunch 时有值）
     public let appLaunch: AppLaunchMetricsData?
+    /// 页面耗时事件（仅当 eventType == .pageTiming 时有值）
+    public let pageTiming: PageTimingData?
 
     public init(
         id: String = UUID().uuidString,
@@ -438,7 +440,8 @@ public struct PerformanceEvent: Codable, Sendable {
         metrics: [PerformanceMetricsData]? = nil,
         jank: JankEventData? = nil,
         alert: AlertData? = nil,
-        appLaunch: AppLaunchMetricsData? = nil
+        appLaunch: AppLaunchMetricsData? = nil,
+        pageTiming: PageTimingData? = nil
     ) {
         self.id = id
         self.eventType = eventType
@@ -447,6 +450,7 @@ public struct PerformanceEvent: Codable, Sendable {
         self.jank = jank
         self.alert = alert
         self.appLaunch = appLaunch
+        self.pageTiming = pageTiming
     }
 }
 
@@ -457,6 +461,7 @@ public enum PerformanceEventType: String, Codable, Sendable {
     case alert
     case alertResolved
     case appLaunch
+    case pageTiming
 }
 
 /// 性能指标数据（用于事件传输）
@@ -645,5 +650,146 @@ public struct AppLaunchMetricsData: Codable, Sendable {
         self.mainToLaunchTime = mainToLaunchTime
         self.launchToFirstFrameTime = launchToFirstFrameTime
         self.timestamp = timestamp
+    }
+}
+
+// MARK: - Page Timing Data
+
+/// 页面耗时数据（用于事件传输）
+public struct PageTimingData: Codable, Sendable {
+    /// 事件唯一 ID
+    public let eventId: String
+    /// 访问唯一 ID
+    public let visitId: String
+    /// 页面标识
+    public let pageId: String
+    /// 页面名称
+    public let pageName: String
+    /// 业务路由
+    public let route: String?
+
+    /// 页面开始时间
+    public let startAt: Date
+    /// 首次布局完成时间
+    public let firstLayoutAt: Date?
+    /// viewDidAppear 时间
+    public let appearAt: Date?
+    /// 页面结束时间
+    public let endAt: Date?
+
+    /// 加载耗时（毫秒）
+    public let loadDuration: Double?
+    /// 出现耗时（毫秒）
+    public let appearDuration: Double?
+    /// 总耗时（毫秒）
+    public let totalDuration: Double?
+
+    /// 自定义标记点
+    public let markers: [PageTimingMarkerData]
+
+    /// App 版本
+    public let appVersion: String?
+    /// App Build 号
+    public let appBuild: String?
+    /// 系统版本
+    public let osVersion: String?
+    /// 设备型号
+    public let deviceModel: String?
+    /// 是否冷启动后的首个页面
+    public let isColdStart: Bool
+    /// 是否通过 push 方式进入
+    public let isPush: Bool?
+    /// 父页面 ID
+    public let parentPageId: String?
+
+    public init(
+        eventId: String,
+        visitId: String,
+        pageId: String,
+        pageName: String,
+        route: String? = nil,
+        startAt: Date,
+        firstLayoutAt: Date? = nil,
+        appearAt: Date? = nil,
+        endAt: Date? = nil,
+        loadDuration: Double? = nil,
+        appearDuration: Double? = nil,
+        totalDuration: Double? = nil,
+        markers: [PageTimingMarkerData] = [],
+        appVersion: String? = nil,
+        appBuild: String? = nil,
+        osVersion: String? = nil,
+        deviceModel: String? = nil,
+        isColdStart: Bool = false,
+        isPush: Bool? = nil,
+        parentPageId: String? = nil
+    ) {
+        self.eventId = eventId
+        self.visitId = visitId
+        self.pageId = pageId
+        self.pageName = pageName
+        self.route = route
+        self.startAt = startAt
+        self.firstLayoutAt = firstLayoutAt
+        self.appearAt = appearAt
+        self.endAt = endAt
+        self.loadDuration = loadDuration
+        self.appearDuration = appearDuration
+        self.totalDuration = totalDuration
+        self.markers = markers
+        self.appVersion = appVersion
+        self.appBuild = appBuild
+        self.osVersion = osVersion
+        self.deviceModel = deviceModel
+        self.isColdStart = isColdStart
+        self.isPush = isPush
+        self.parentPageId = parentPageId
+    }
+
+    /// 从 PageTimingEvent 创建
+    public init(from event: PageTimingEvent) {
+        self.eventId = event.eventId
+        self.visitId = event.visitId
+        self.pageId = event.pageId
+        self.pageName = event.pageName
+        self.route = event.route
+        self.startAt = event.startAt
+        self.firstLayoutAt = event.firstLayoutAt
+        self.appearAt = event.appearAt
+        self.endAt = event.endAt
+        self.loadDuration = event.loadDuration
+        self.appearDuration = event.appearDuration
+        self.totalDuration = event.totalDuration
+        self.markers = event.markers.map { PageTimingMarkerData(from: $0) }
+        self.appVersion = event.appVersion
+        self.appBuild = event.appBuild
+        self.osVersion = event.osVersion
+        self.deviceModel = event.deviceModel
+        self.isColdStart = event.isColdStart
+        self.isPush = event.isPush
+        self.parentPageId = event.parentPageId
+    }
+}
+
+/// 页面耗时标记点数据
+public struct PageTimingMarkerData: Codable, Sendable {
+    /// 标记名称
+    public let name: String
+    /// 标记时间
+    public let timestamp: Date
+    /// 距离页面 start 的耗时（毫秒）
+    public let deltaMs: Double?
+
+    public init(name: String, timestamp: Date, deltaMs: Double? = nil) {
+        self.name = name
+        self.timestamp = timestamp
+        self.deltaMs = deltaMs
+    }
+
+    /// 从 PageTimingMarker 创建
+    public init(from marker: PageTimingMarker) {
+        self.name = marker.name
+        self.timestamp = marker.timestamp
+        self.deltaMs = marker.deltaMs
     }
 }

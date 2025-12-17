@@ -1,0 +1,448 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 60;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A4762D1C2EEBEB4A000216E3 /* CocoaLumberjack in Frameworks */ = {isa = PBXBuildFile; productRef = A4762D1B2EEBEB4A000216E3 /* CocoaLumberjack */; };
+		A4762D1E2EEBEB4A000216E3 /* CocoaLumberjackSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A4762D1D2EEBEB4A000216E3 /* CocoaLumberjackSwift */; };
+		A4952BDC2EEBEE8300754EA0 /* DDLogBridgeLocal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4952BDB2EEBEE8300754EA0 /* DDLogBridgeLocal.swift */; };
+		A4B771A32EEAA8EE00B114C1 /* DebugProbe in Frameworks */ = {isa = PBXBuildFile; productRef = A4B771A22EEAA8EE00B114C1 /* DebugProbe */; };
+		AAA00001 /* DebugProbeDemoApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00010 /* DebugProbeDemoApp.swift */; };
+		AAA00002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00011 /* ContentView.swift */; };
+		AAA00003 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AAA00012 /* Assets.xcassets */; };
+		AAA00004 /* NetworkDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00013 /* NetworkDemoView.swift */; };
+		AAA00005 /* WebSocketDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00014 /* WebSocketDemoView.swift */; };
+		AAA00006 /* LogDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00015 /* LogDemoView.swift */; };
+		AAA00007 /* DatabaseDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00016 /* DatabaseDemoView.swift */; };
+		AAA00008 /* MockDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00017 /* MockDemoView.swift */; };
+		AAA00009 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00018 /* SettingsView.swift */; };
+		AAA0000A /* DatabaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA00019 /* DatabaseManager.swift */; };
+		AAA0000B /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAA0001A /* WebSocketManager.swift */; };
+		AAA0000C /* DebugProbe in Frameworks */ = {isa = PBXBuildFile; productRef = AAA0001B /* DebugProbe */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A4952BDB2EEBEE8300754EA0 /* DDLogBridgeLocal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DDLogBridgeLocal.swift; sourceTree = "<group>"; };
+		AAA00010 /* DebugProbeDemoApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugProbeDemoApp.swift; sourceTree = "<group>"; };
+		AAA00011 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		AAA00012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AAA00013 /* NetworkDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkDemoView.swift; sourceTree = "<group>"; };
+		AAA00014 /* WebSocketDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketDemoView.swift; sourceTree = "<group>"; };
+		AAA00015 /* LogDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogDemoView.swift; sourceTree = "<group>"; };
+		AAA00016 /* DatabaseDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseDemoView.swift; sourceTree = "<group>"; };
+		AAA00017 /* MockDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockDemoView.swift; sourceTree = "<group>"; };
+		AAA00018 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AAA00019 /* DatabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseManager.swift; sourceTree = "<group>"; };
+		AAA0001A /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
+		AAA00020 /* DebugProbeDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DebugProbeDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AAA00030 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A4762D1C2EEBEB4A000216E3 /* CocoaLumberjack in Frameworks */,
+				AAA0000C /* DebugProbe in Frameworks */,
+				A4762D1E2EEBEB4A000216E3 /* CocoaLumberjackSwift in Frameworks */,
+				A4B771A32EEAA8EE00B114C1 /* DebugProbe in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AAA00040 = {
+			isa = PBXGroup;
+			children = (
+				AAA00041 /* DebugProbeDemo */,
+				AAA00042 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AAA00041 /* DebugProbeDemo */ = {
+			isa = PBXGroup;
+			children = (
+				AAA00010 /* DebugProbeDemoApp.swift */,
+				AAA00011 /* ContentView.swift */,
+				AAA00043 /* Views */,
+				AAA00044 /* Managers */,
+				AAA00012 /* Assets.xcassets */,
+			);
+			path = DebugProbeDemo;
+			sourceTree = "<group>";
+		};
+		AAA00042 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AAA00020 /* DebugProbeDemo.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		AAA00043 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				AAA00013 /* NetworkDemoView.swift */,
+				AAA00014 /* WebSocketDemoView.swift */,
+				AAA00015 /* LogDemoView.swift */,
+				AAA00016 /* DatabaseDemoView.swift */,
+				AAA00017 /* MockDemoView.swift */,
+				AAA00018 /* SettingsView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		AAA00044 /* Managers */ = {
+			isa = PBXGroup;
+			children = (
+				A4952BDB2EEBEE8300754EA0 /* DDLogBridgeLocal.swift */,
+				AAA00019 /* DatabaseManager.swift */,
+				AAA0001A /* WebSocketManager.swift */,
+			);
+			path = Managers;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AAA00050 /* DebugProbeDemo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AAA00060 /* Build configuration list for PBXNativeTarget "DebugProbeDemo" */;
+			buildPhases = (
+				AAA00051 /* Sources */,
+				AAA00030 /* Frameworks */,
+				AAA00052 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DebugProbeDemo;
+			packageProductDependencies = (
+				AAA0001B /* DebugProbe */,
+				A4B771A22EEAA8EE00B114C1 /* DebugProbe */,
+				A4762D1B2EEBEB4A000216E3 /* CocoaLumberjack */,
+				A4762D1D2EEBEB4A000216E3 /* CocoaLumberjackSwift */,
+			);
+			productName = DebugProbeDemo;
+			productReference = AAA00020 /* DebugProbeDemo.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AAA00070 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 2610;
+				TargetAttributes = {
+					AAA00050 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = AAA00071 /* Build configuration list for PBXProject "DebugProbeDemo" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AAA00040;
+			packageReferences = (
+				A4B771A12EEAA8EE00B114C1 /* XCLocalSwiftPackageReference "../../../DebugProbe" */,
+				A4762D1A2EEBEB4A000216E3 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */,
+			);
+			productRefGroup = AAA00042 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AAA00050 /* DebugProbeDemo */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AAA00052 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAA00003 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AAA00051 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A4952BDC2EEBEE8300754EA0 /* DDLogBridgeLocal.swift in Sources */,
+				AAA00001 /* DebugProbeDemoApp.swift in Sources */,
+				AAA00002 /* ContentView.swift in Sources */,
+				AAA00004 /* NetworkDemoView.swift in Sources */,
+				AAA00005 /* WebSocketDemoView.swift in Sources */,
+				AAA00006 /* LogDemoView.swift in Sources */,
+				AAA00007 /* DatabaseDemoView.swift in Sources */,
+				AAA00008 /* MockDemoView.swift in Sources */,
+				AAA00009 /* SettingsView.swift in Sources */,
+				AAA0000A /* DatabaseManager.swift in Sources */,
+				AAA0000B /* WebSocketManager.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AAA00090 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AAA00091 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		AAA00092 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "DebugProbe Demo";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.debugprobe.demo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AAA00093 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "DebugProbe Demo";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.debugprobe.demo;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AAA00060 /* Build configuration list for PBXNativeTarget "DebugProbeDemo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAA00092 /* Debug */,
+				AAA00093 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AAA00071 /* Build configuration list for PBXProject "DebugProbeDemo" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AAA00090 /* Debug */,
+				AAA00091 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		A4B771A12EEAA8EE00B114C1 /* XCLocalSwiftPackageReference "../../../DebugProbe" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../../DebugProbe;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A4762D1A2EEBEB4A000216E3 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/CocoaLumberjack/CocoaLumberjack";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A4762D1B2EEBEB4A000216E3 /* CocoaLumberjack */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A4762D1A2EEBEB4A000216E3 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */;
+			productName = CocoaLumberjack;
+		};
+		A4762D1D2EEBEB4A000216E3 /* CocoaLumberjackSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A4762D1A2EEBEB4A000216E3 /* XCRemoteSwiftPackageReference "CocoaLumberjack" */;
+			productName = CocoaLumberjackSwift;
+		};
+		A4B771A22EEAA8EE00B114C1 /* DebugProbe */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DebugProbe;
+		};
+		AAA0001B /* DebugProbe */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DebugProbe;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = AAA00070 /* Project object */;
+}

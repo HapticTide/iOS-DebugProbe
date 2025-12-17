@@ -1,6 +1,5 @@
 # Xcode
 .DS_Store
-*.xcodeproj
 *.xcworkspace
 xcuserdata/
 *.xccheckout
@@ -17,7 +16,6 @@ DerivedData/
 Packages/
 Package.pins
 Package.resolved
-*.xcodeproj
 
 # CocoaPods
 Pods/

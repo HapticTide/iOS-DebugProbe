@@ -58,6 +58,17 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
     /// 告警配置
     public var alertConfig: AlertConfig = AlertConfig(rules: AlertConfig.defaultRules)
 
+    // MARK: - Page Timing Configuration
+
+    /// 是否启用页面耗时监控
+    public var monitorPageTiming: Bool = true
+
+    /// 页面耗时采样率（0.0 - 1.0）
+    public var pageTimingSamplingRate: Double = 1.0
+
+    /// 是否启用 UIKit 自动采集
+    public var pageTimingAutoTrackingEnabled: Bool = true
+
     // MARK: - Private Properties
 
     private weak var context: PluginContext?
@@ -273,6 +284,11 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
             diskIOMonitor = DiskIOMonitor()
         }
 
+        // 初始化页面耗时监控
+        if monitorPageTiming {
+            setupPageTimingRecorder()
+        }
+
         // 初始化告警检测器
         alertChecker = AlertChecker(config: alertConfig) { [weak self] alert in
             self?.reportAlert(alert)
@@ -290,7 +306,7 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
         reportAppLaunchMetrics()
 
         stateQueue.sync { state = .running }
-        context?.logInfo("PerformancePlugin started with interval: \(sampleInterval)s, smart sampling: \(smartSamplingEnabled)")
+        context?.logInfo("PerformancePlugin started with interval: \(sampleInterval)s, smart sampling: \(smartSamplingEnabled), pageTiming: \(monitorPageTiming)")
     }
 
     public func pause() async {
@@ -339,6 +355,9 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
         diskIOMonitor = nil
         alertChecker = nil
         smartSampler = nil
+
+        // 停止页面耗时记录器
+        stopPageTimingRecorder()
 
         // 上报剩余批次
         flushMetricsBatch()
@@ -575,6 +594,58 @@ public final class PerformancePlugin: DebugProbePlugin, @unchecked Sendable {
 
         // 清除已上报的启动指标
         Self.appLaunchMetrics = nil
+    }
+
+    // MARK: - Page Timing
+
+    /// 设置页面耗时记录器
+    private func setupPageTimingRecorder() {
+        let recorder = PageTimingRecorder.shared
+        recorder.autoTrackingEnabled = pageTimingAutoTrackingEnabled
+        recorder.samplingRate = pageTimingSamplingRate
+
+        // 注册事件回调
+        recorder.onPageTimingEvent = { [weak self] event in
+            self?.reportPageTimingEvent(event)
+        }
+
+        // 同时注册到 EventCallbacks
+        EventCallbacks.onPageTimingEvent = { [weak self] event in
+            self?.reportPageTimingEvent(event)
+        }
+
+        // 启动自动采集
+        if pageTimingAutoTrackingEnabled {
+            recorder.startAutoTracking()
+        }
+
+        context?.logInfo("PageTimingRecorder setup: autoTracking=\(pageTimingAutoTrackingEnabled), samplingRate=\(pageTimingSamplingRate)")
+    }
+
+    /// 停止页面耗时记录器
+    private func stopPageTimingRecorder() {
+        PageTimingRecorder.shared.stopAutoTracking()
+        PageTimingRecorder.shared.onPageTimingEvent = nil
+        EventCallbacks.onPageTimingEvent = nil
+    }
+
+    /// 上报页面耗时事件
+    private func reportPageTimingEvent(_ event: PageTimingEvent) {
+        let performanceEvent = PerformanceEvent(
+            eventType: .pageTiming,
+            pageTiming: PageTimingData(from: event)
+        )
+        EventCallbacks.reportEvent(.performance(performanceEvent))
+
+        // 日志输出
+        var logParts = ["Page timing: \(event.pageName)"]
+        if let appearDuration = event.appearDuration {
+            logParts.append("appear=\(String(format: "%.1f", appearDuration))ms")
+        }
+        if let loadDuration = event.loadDuration {
+            logParts.append("load=\(String(format: "%.1f", loadDuration))ms")
+        }
+        context?.logDebug(logParts.joined(separator: ", "))
     }
 
     private func reportJankEvent(_ event: JankEvent) {

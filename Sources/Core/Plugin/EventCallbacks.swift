@@ -91,6 +91,16 @@ public enum EventCallbacks {
     /// 检查是否有响应阶段断点（同步方法，用于预判断）
     public static var breakpointHasResponseRule: ((URLRequest) -> Bool)?
 
+    // MARK: - Page Timing Callbacks
+
+    /// 页面耗时事件回调
+    public static var onPageTimingEvent: ((PageTimingEvent) -> Void)?
+
+    /// 上报页面耗时事件
+    public static func reportPageTiming(_ event: PageTimingEvent) {
+        onPageTimingEvent?(event)
+    }
+
     // MARK: - Lifecycle
 
     /// 清理所有回调（在 DebugProbe.stop() 时调用）
@@ -100,6 +110,7 @@ public enum EventCallbacks {
         onLogEvent = nil
         onWebSocketEvent = nil
         onDebugEvent = nil
+        onPageTimingEvent = nil
 
         // Mock 处理器
         mockHTTPRequest = nil
