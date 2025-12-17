@@ -33,16 +33,25 @@ public final class PageTimingRecorder: @unchecked Sendable {
 
     /// VC 类名黑名单（不采集）
     public var blacklistedClasses: Set<String> = [
-        "UINavigationController",
-        "UITabBarController",
-        "UIPageViewController",
-        "UISplitViewController",
         "UIInputWindowController",
         "UIAlertController",
         "UIActivityViewController",
         "UIReferenceLibraryViewController",
         "_UIRemoteInputViewController",
     ]
+
+    /// 需要排除的系统容器控制器基类
+    /// 会检查子类继承关系，而非仅检查类名
+    private let excludedContainerClasses: [AnyClass] = {
+        var classes: [AnyClass] = []
+        #if canImport(UIKit)
+            classes.append(UINavigationController.self)
+            classes.append(UITabBarController.self)
+            classes.append(UIPageViewController.self)
+            classes.append(UISplitViewController.self)
+        #endif
+        return classes
+    }()
 
     /// VC 类名白名单（仅采集这些，为空则不启用白名单模式）
     public var whitelistedClasses: Set<String> = []
@@ -262,7 +271,14 @@ public final class PageTimingRecorder: @unchecked Sendable {
         private func shouldTrack(_ viewController: UIViewController) -> Bool {
             let className = String(describing: type(of: viewController))
 
-            // 检查黑名单
+            // 检查是否是系统容器控制器的子类（UINavigationController, UITabBarController 等）
+            for excludedClass in excludedContainerClasses {
+                if viewController.isKind(of: excludedClass) {
+                    return false
+                }
+            }
+
+            // 检查黑名单（精确类名匹配）
             if blacklistedClasses.contains(className) {
                 return false
             }
