@@ -33,11 +33,18 @@ public final class PageTimingRecorder: @unchecked Sendable {
 
     /// VC 类名黑名单（不采集）
     public var blacklistedClasses: Set<String> = [
+        // 键盘和输入相关
         "UIInputWindowController",
+        "UISystemKeyboardDockController",
+        "UICompatibilityInputViewController",
+        "UITrackingElementWindowController",
+        "_UIRemoteInputViewController",
+        // 系统弹窗
         "UIAlertController",
         "UIActivityViewController",
         "UIReferenceLibraryViewController",
-        "_UIRemoteInputViewController",
+        // 基类（不应直接使用）
+        "UIViewController",
     ]
 
     /// 需要排除的系统容器控制器基类
