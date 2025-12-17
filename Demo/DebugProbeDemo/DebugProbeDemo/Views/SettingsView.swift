@@ -25,6 +25,10 @@ struct SettingsView: View {
     @State private var pluginRefreshCounter = 0
     /// 设备别名输入框焦点状态
     @FocusState private var isDeviceAliasFocused: Bool
+    /// 连接配置输入框焦点状态
+    @FocusState private var isHostFocused: Bool
+    @FocusState private var isPortFocused: Bool
+    @FocusState private var isTokenFocused: Bool
     /// 禁用父插件时的确认弹窗状态
     @State private var disableParentPluginAlert: (pluginId: String, pluginName: String, childNames: [String])?
 
@@ -130,6 +134,11 @@ struct SettingsView: View {
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                         .keyboardType(.URL)
+                        .focused($isHostFocused)
+                        .onSubmit { applyConfigurationIfNeeded() }
+                        .onChange(of: isHostFocused) { focused in
+                            if !focused { applyConfigurationIfNeeded() }
+                        }
                 }
 
                 HStack {
@@ -139,6 +148,11 @@ struct SettingsView: View {
                         .multilineTextAlignment(.trailing)
                         .keyboardType(.numberPad)
                         .frame(width: 80)
+                        .focused($isPortFocused)
+                        .onSubmit { applyConfigurationIfNeeded() }
+                        .onChange(of: isPortFocused) { focused in
+                            if !focused { applyConfigurationIfNeeded() }
+                        }
                 }
 
                 HStack {
@@ -148,26 +162,21 @@ struct SettingsView: View {
                         .multilineTextAlignment(.trailing)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
+                        .focused($isTokenFocused)
+                        .onSubmit { applyConfigurationIfNeeded() }
+                        .onChange(of: isTokenFocused) { focused in
+                            if !focused { applyConfigurationIfNeeded() }
+                        }
                 }
             } header: {
                 Text("连接配置")
             } footer: {
-                Text("修改配置后点击「应用配置」生效")
+                Text("修改配置后自动应用")
             }
 
             // MARK: - 4. 操作
 
             Section {
-                Button {
-                    applyConfiguration()
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text("应用配置")
-                        Spacer()
-                    }
-                }
-
                 Button {
                     reconnect()
                 } label: {
@@ -378,10 +387,18 @@ struct SettingsView: View {
         connectionStatus = settings.connectionStatusDetail
     }
 
-    private func applyConfiguration() {
+    /// 检查配置是否有变化，有变化则自动应用
+    private func applyConfigurationIfNeeded() {
         let port = Int(hubPort) ?? DebugProbeSettings.defaultPort
+        // 检查配置是否有变化
+        guard
+            hubHost != settings.hubHost ||
+            port != settings.hubPort ||
+            token != settings.token
+        else {
+            return
+        }
         settings.configure(host: hubHost, port: port, token: token)
-
         // configure() 会发出通知，如果监听了通知会自动重连
         // 但为了立即生效，这里主动调用 reconnect()
         DebugProbe.shared.reconnect()
