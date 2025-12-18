@@ -195,11 +195,14 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             throw DBInspectorError.invalidQuery("Only SELECT statements are allowed")
         }
 
-        // 检查是否包含危险操作
+        // 检查是否包含危险操作（使用单词边界匹配，避免误判列名如 createTimestamp）
         let dangerousPatterns = ["DROP", "DELETE", "INSERT", "UPDATE", "ALTER", "CREATE", "ATTACH", "DETACH"]
         let upperQuery = trimmedQuery.uppercased()
         for pattern in dangerousPatterns {
-            if upperQuery.contains(pattern) {
+            // 使用正则表达式进行单词边界匹配
+            let regexPattern = "\\b\(pattern)\\b"
+            if let regex = try? NSRegularExpression(pattern: regexPattern, options: []),
+               regex.firstMatch(in: upperQuery, options: [], range: NSRange(upperQuery.startIndex..., in: upperQuery)) != nil {
                 throw DBInspectorError.invalidQuery("Query contains forbidden operation: \(pattern)")
             }
         }
