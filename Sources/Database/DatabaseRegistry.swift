@@ -116,87 +116,100 @@ public final class DatabaseRegistry: @unchecked Sendable {
 
     // MARK: - Active State Management (多账户场景)
 
-    /// 设置指定数据库为活跃状态
-    /// - Parameter dbIds: 活跃数据库 ID 列表
-    /// - Note: 未在列表中的已注册数据库将被标记为非活跃
-    public func setActive(dbIds: Set<String>) {
+    /// 设置数据库的账户归属状态
+    /// - Parameters:
+    ///   - currentUserPathPrefix: 当前用户数据库路径前缀
+    ///   - sharedPathPatterns: 共享数据库的路径关键词列表（包含这些关键词的视为共享）
+    /// - Note: 不匹配 currentUserPathPrefix 且不匹配 sharedPathPatterns 的数据库会被标记为 otherUser
+    public func setOwnership(currentUserPathPrefix: String, sharedPathPatterns: [String] = []) {
         lock.lock()
         defer { lock.unlock() }
 
+        var currentUserIds: [String] = []
+        var sharedIds: [String] = []
+        var otherUserIds: [String] = []
+
         for (id, var registered) in databases {
             var descriptor = registered.descriptor
-            descriptor.isActive = dbIds.contains(id)
+            let dbPath = registered.url.path
+
+            // 判断归属
+            let ownership: DatabaseDescriptor.AccountOwnership
+            if dbPath.hasPrefix(currentUserPathPrefix) {
+                ownership = .currentUser
+                currentUserIds.append(id)
+            } else if sharedPathPatterns.contains(where: { dbPath.contains($0) }) {
+                ownership = .shared
+                sharedIds.append(id)
+            } else {
+                ownership = .otherUser
+                otherUserIds.append(id)
+            }
+
+            descriptor.ownership = ownership
             registered = RegisteredDatabase(descriptor: descriptor, url: registered.url)
             databases[id] = registered
+
+            DebugLog.debug("[DatabaseRegistry] DB '\(id)' ownership=\(ownership.rawValue) path=\(dbPath)")
         }
 
-        DebugLog.info("[DatabaseRegistry] Set active databases: \(dbIds.joined(separator: ", "))")
+        DebugLog.info(
+            "[DatabaseRegistry] Ownership updated - currentUser: \(currentUserIds.count), shared: \(sharedIds.count), otherUser: \(otherUserIds.count)"
+        )
     }
 
-    /// 设置单个数据库的活跃状态
-    /// - Parameters:
-    ///   - dbId: 数据库 ID
-    ///   - isActive: 是否活跃
-    public func setActive(dbId: String, isActive: Bool) {
+    /// 设置指定数据库的归属状态
+    public func setOwnership(dbId: String, ownership: DatabaseDescriptor.AccountOwnership) {
         lock.lock()
         defer { lock.unlock() }
 
         guard var registered = databases[dbId] else { return }
         var descriptor = registered.descriptor
-        descriptor.isActive = isActive
+        descriptor.ownership = ownership
         registered = RegisteredDatabase(descriptor: descriptor, url: registered.url)
         databases[dbId] = registered
 
-        DebugLog.info("[DatabaseRegistry] Set database \(dbId) active: \(isActive)")
+        DebugLog.info("[DatabaseRegistry] Set database \(dbId) ownership: \(ownership.rawValue)")
     }
 
-    /// 将所有数据库标记为活跃
-    public func setAllActive() {
+    /// 将所有数据库标记为共享
+    public func setAllShared() {
         lock.lock()
         defer { lock.unlock() }
 
         for (id, var registered) in databases {
             var descriptor = registered.descriptor
-            descriptor.isActive = true
+            descriptor.ownership = .shared
             registered = RegisteredDatabase(descriptor: descriptor, url: registered.url)
             databases[id] = registered
         }
 
-        DebugLog.info("[DatabaseRegistry] Set all databases active")
-    }
-
-    /// 将所有数据库标记为非活跃
-    public func clearActive() {
-        lock.lock()
-        defer { lock.unlock() }
-
-        for (id, var registered) in databases {
-            var descriptor = registered.descriptor
-            descriptor.isActive = false
-            registered = RegisteredDatabase(descriptor: descriptor, url: registered.url)
-            databases[id] = registered
-        }
-
-        DebugLog.info("[DatabaseRegistry] Cleared all active databases")
+        DebugLog.info("[DatabaseRegistry] Set all databases as shared")
     }
 
     /// 设置包含指定路径前缀的数据库为活跃
     /// - Parameter pathPrefix: 路径前缀（如用户目录）
     /// - Note: 路径匹配使用 URL.path 进行前缀比较
+    @available(*, deprecated, message: "Use setOwnership(currentUserPathPrefix:sharedPathPatterns:) instead")
     public func setActiveByPath(prefix pathPrefix: String) {
         lock.lock()
         defer { lock.unlock() }
 
         var activeIds: [String] = []
+        var inactiveIds: [String] = []
         for (id, var registered) in databases {
             var descriptor = registered.descriptor
-            let isMatch = registered.url.path.hasPrefix(pathPrefix)
-            descriptor.isActive = isMatch
+            let dbPath = registered.url.path
+            let isMatch = dbPath.hasPrefix(pathPrefix)
+            descriptor.ownership = isMatch ? .currentUser : .otherUser
             registered = RegisteredDatabase(descriptor: descriptor, url: registered.url)
             databases[id] = registered
             if isMatch {
                 activeIds.append(id)
+            } else {
+                inactiveIds.append(id)
             }
+            DebugLog.debug("[DatabaseRegistry] DB '\(id)' path=\(dbPath) prefix=\(pathPrefix) match=\(isMatch)")
         }
 
         DebugLog.info("[DatabaseRegistry] Set active by path prefix '\(pathPrefix)': \(activeIds.joined(separator: ", "))")

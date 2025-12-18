@@ -68,6 +68,16 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         }
     }
 
+    /// 账户归属状态
+    public enum AccountOwnership: String, Codable, Sendable {
+        /// 属于当前活跃用户
+        case currentUser
+        /// 共享数据库（不属于任何特定用户）
+        case shared
+        /// 属于其他用户（非当前登录用户）
+        case otherUser
+    }
+
     /// 唯一标识符
     public let id: String
 
@@ -86,8 +96,8 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
     /// 是否在 Inspector 中可见
     public let visibleInInspector: Bool
 
-    /// 是否属于当前活跃用户（多账户场景下用于区分）
-    public var isActive: Bool
+    /// 账户归属状态（多账户场景下用于区分）
+    public var ownership: AccountOwnership
 
     /// 初始化
     public init(
@@ -97,7 +107,7 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         location: Location,
         isSensitive: Bool = false,
         visibleInInspector: Bool = true,
-        isActive: Bool = true
+        ownership: AccountOwnership = .shared
     ) {
         self.id = id
         self.name = name
@@ -105,6 +115,6 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         self.location = location
         self.isSensitive = isSensitive
         self.visibleInInspector = visibleInInspector
-        self.isActive = isActive
+        self.ownership = ownership
     }
 }
