@@ -81,6 +81,16 @@ public struct DBTablePageResult: Codable, Sendable {
     }
 }
 
+/// 加密数据库的解锁状态
+public enum EncryptionStatus: String, Codable, Sendable {
+    /// 未加密（普通数据库）
+    case none
+    /// 加密且已解锁（有 keyProvider 且验证成功）
+    case unlocked
+    /// 加密但未解锁（无 keyProvider 或验证失败）
+    case locked
+}
+
 /// 数据库信息（包含表数量）
 public struct DBInfo: Codable, Sendable {
     public let descriptor: DatabaseDescriptor
@@ -88,12 +98,21 @@ public struct DBInfo: Codable, Sendable {
     public let fileSizeBytes: Int64?
     /// 数据库文件的绝对路径
     public let absolutePath: String?
+    /// 加密状态
+    public let encryptionStatus: EncryptionStatus
 
-    public init(descriptor: DatabaseDescriptor, tableCount: Int, fileSizeBytes: Int64?, absolutePath: String? = nil) {
+    public init(
+        descriptor: DatabaseDescriptor,
+        tableCount: Int,
+        fileSizeBytes: Int64?,
+        absolutePath: String? = nil,
+        encryptionStatus: EncryptionStatus = .none
+    ) {
         self.descriptor = descriptor
         self.tableCount = tableCount
         self.fileSizeBytes = fileSizeBytes
         self.absolutePath = absolutePath
+        self.encryptionStatus = encryptionStatus
     }
 }
 

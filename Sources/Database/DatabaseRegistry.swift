@@ -19,6 +19,9 @@ public final class DatabaseRegistry: @unchecked Sendable {
     /// 已注册的密钥提供者
     private var keyProviders: [String: DatabaseKeyProvider] = [:]
 
+    /// 已注册的加密数据库准备语句（如 PRAGMA cipher_xxx）
+    private var preparationStatements: [String: [String]] = [:]
+
     /// 线程安全锁
     private let lock = NSLock()
 
@@ -65,6 +68,7 @@ public final class DatabaseRegistry: @unchecked Sendable {
 
         databases.removeValue(forKey: id)
         keyProviders.removeValue(forKey: id)
+        preparationStatements.removeValue(forKey: id)
         DebugLog.info("[DatabaseRegistry] Unregistered database: \(id)")
     }
 
@@ -127,17 +131,73 @@ public final class DatabaseRegistry: @unchecked Sendable {
     ///   - descriptor: 数据库描述符（应设置 isEncrypted = true）
     ///   - url: 数据库文件 URL
     ///   - keyProvider: 密钥提供者
+    ///   - preparationSQL: 应用密钥后需要执行的额外 SQL 语句（如 PRAGMA cipher_xxx 配置）
     public func registerEncrypted(
         descriptor: DatabaseDescriptor,
         url: URL,
-        keyProvider: DatabaseKeyProvider
+        keyProvider: DatabaseKeyProvider,
+        preparationSQL: [String] = []
     ) {
         lock.lock()
         defer { lock.unlock() }
 
         databases[descriptor.id] = RegisteredDatabase(descriptor: descriptor, url: url)
         keyProviders[descriptor.id] = keyProvider
+        if !preparationSQL.isEmpty {
+            preparationStatements[descriptor.id] = preparationSQL
+        }
         DebugLog.info("[DatabaseRegistry] Registered encrypted database: \(descriptor.id) (\(descriptor.encryptionType ?? "unknown"))")
+    }
+
+    /// 获取加密数据库的准备语句
+    /// - Parameter id: 数据库 ID
+    /// - Returns: 准备语句列表，如果没有则返回空数组
+    public func preparationSQL(for id: String) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return preparationStatements[id] ?? []
+    }
+
+    /// 清理指定数据库的加密注册（密钥提供者和准备语句）
+    /// - Parameter id: 数据库 ID
+    public func unregisterEncryption(for id: String) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        keyProviders.removeValue(forKey: id)
+        preparationStatements.removeValue(forKey: id)
+
+        // 如果数据库描述符存在，更新其加密状态
+        if var registered = databases[id] {
+            let updatedDescriptor = DatabaseDescriptor(
+                id: registered.descriptor.id,
+                name: registered.descriptor.name,
+                kind: registered.descriptor.kind,
+                location: registered.descriptor.location,
+                isSensitive: registered.descriptor.isSensitive,
+                visibleInInspector: registered.descriptor.visibleInInspector,
+                ownership: registered.descriptor.ownership,
+                ownerIdentifier: registered.descriptor.ownerIdentifier,
+                isEncrypted: false,
+                encryptionType: nil
+            )
+            databases[id] = RegisteredDatabase(descriptor: updatedDescriptor, url: registered.url)
+        }
+
+        DebugLog.debug("[DatabaseRegistry] Unregistered encryption for: \(id)")
+    }
+
+    /// 清理所有加密注册
+    public func unregisterAllEncryption() {
+        lock.lock()
+        let ids = Array(keyProviders.keys)
+        lock.unlock()
+
+        for id in ids {
+            unregisterEncryption(for: id)
+        }
+        DebugLog.info("[DatabaseRegistry] Unregistered all encryption (\(ids.count) databases)")
     }
 
     /// 获取密钥提供者

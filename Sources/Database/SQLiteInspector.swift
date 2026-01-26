@@ -45,6 +45,15 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             // 先获取文件大小（不需要打开数据库）
             let fileSize = getFileSize(at: url)
 
+            // 确定加密状态
+            let encryptionStatus: EncryptionStatus = if !descriptor.isEncrypted {
+                .none
+            } else if registry.hasKeyProvider(for: descriptor.id) {
+                .unlocked // 有 keyProvider，假定已解锁（实际验证在打开数据库时）
+            } else {
+                .locked // 无 keyProvider
+            }
+
             do {
                 let dbId = descriptor.id
                 let tableCount = try await getTableCount(at: url, dbId: dbId)
@@ -53,16 +62,27 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
                     descriptor: descriptor,
                     tableCount: tableCount,
                     fileSizeBytes: fileSize,
-                    absolutePath: url.path
+                    absolutePath: url.path,
+                    encryptionStatus: encryptionStatus
                 ))
             } catch {
                 // 如果无法打开数据库，仍然显示它但标记为不可用
                 // 文件大小仍然可以显示
+                DebugLog.warning("[SQLiteInspector] getTableCount failed for \(descriptor.id): \(error)")
+
+                // 如果打开失败且是加密数据库，标记为锁定
+                let actualStatus: EncryptionStatus = if descriptor.isEncrypted {
+                    .locked
+                } else {
+                    encryptionStatus
+                }
+
                 results.append(DBInfo(
                     descriptor: descriptor,
                     tableCount: 0,
                     fileSizeBytes: fileSize,
-                    absolutePath: url.path
+                    absolutePath: url.path,
+                    encryptionStatus: actualStatus
                 ))
             }
         }
@@ -81,9 +101,10 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         }
 
         // 检查加密数据库是否有密钥
-        if let descriptor = registry.descriptor(for: dbId),
-           descriptor.isEncrypted,
-           !registry.hasKeyProvider(for: dbId) {
+        if
+            let descriptor = registry.descriptor(for: dbId),
+            descriptor.isEncrypted,
+            !registry.hasKeyProvider(for: dbId) {
             throw DBInspectorError.accessDenied("Encrypted database requires key provider")
         }
 
@@ -101,9 +122,10 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         }
 
         // 检查加密数据库是否有密钥
-        if let descriptor = registry.descriptor(for: dbId),
-           descriptor.isEncrypted,
-           !registry.hasKeyProvider(for: dbId) {
+        if
+            let descriptor = registry.descriptor(for: dbId),
+            descriptor.isEncrypted,
+            !registry.hasKeyProvider(for: dbId) {
             throw DBInspectorError.accessDenied("Encrypted database requires key provider")
         }
 
@@ -133,9 +155,10 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         }
 
         // 检查加密数据库是否有密钥
-        if let descriptor = registry.descriptor(for: dbId),
-           descriptor.isEncrypted,
-           !registry.hasKeyProvider(for: dbId) {
+        if
+            let descriptor = registry.descriptor(for: dbId),
+            descriptor.isEncrypted,
+            !registry.hasKeyProvider(for: dbId) {
             throw DBInspectorError.accessDenied("Encrypted database requires key provider")
         }
 
@@ -176,9 +199,10 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         }
 
         // 检查加密数据库是否有密钥
-        if let descriptor = registry.descriptor(for: dbId),
-           descriptor.isEncrypted,
-           !registry.hasKeyProvider(for: dbId) {
+        if
+            let descriptor = registry.descriptor(for: dbId),
+            descriptor.isEncrypted,
+            !registry.hasKeyProvider(for: dbId) {
             throw DBInspectorError.accessDenied("Encrypted database requires key provider")
         }
 
@@ -194,8 +218,15 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         for pattern in dangerousPatterns {
             // 使用正则表达式进行单词边界匹配
             let regexPattern = "\\b\(pattern)\\b"
-            if let regex = try? NSRegularExpression(pattern: regexPattern, options: []),
-               regex.firstMatch(in: upperQuery, options: [], range: NSRange(upperQuery.startIndex..., in: upperQuery)) != nil {
+            if
+                let regex = try? NSRegularExpression(pattern: regexPattern, options: []),
+                regex
+                    .firstMatch(
+                        in: upperQuery,
+                        options: [],
+                        range: NSRange(upperQuery.startIndex..., in: upperQuery)
+                    ) !=
+                    nil {
                 throw DBInspectorError.invalidQuery("Query contains forbidden operation: \(pattern)")
             }
         }
@@ -240,12 +271,22 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
                 }
 
                 // 应用 SQLCipher 密钥
-                // 使用 PRAGMA key 设置密钥
+                // SQLCipher raw key 格式需要双引号包裹: "x'hex...'"
                 let keySQL = "PRAGMA key = \"\(key)\""
                 if sqlite3_exec(database, keySQL, nil, nil, nil) != SQLITE_OK {
                     let errorMessage = String(cString: sqlite3_errmsg(database))
                     sqlite3_close(database)
                     throw DBInspectorError.accessDenied("Failed to apply encryption key: \(errorMessage)")
+                }
+
+                // 执行注册时提供的准备语句（如 PRAGMA cipher_xxx 配置）
+                let prepSQL = DatabaseRegistry.shared.preparationSQL(for: dbId)
+                for sql in prepSQL {
+                    if sqlite3_exec(database, sql, nil, nil, nil) != SQLITE_OK {
+                        let errorMessage = String(cString: sqlite3_errmsg(database))
+                        sqlite3_close(database)
+                        throw DBInspectorError.accessDenied("Failed to execute preparation SQL: \(errorMessage)")
+                    }
                 }
 
                 // 验证密钥是否正确（尝试读取 sqlite_master）
@@ -280,13 +321,13 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         }
 
         // 如果是 hex keyspec 格式，验证长度和字符
-        if key.hasPrefix("x'") && key.hasSuffix("'") {
+        if key.hasPrefix("x'"), key.hasSuffix("'") {
             let hexPart = String(key.dropFirst(2).dropLast(1))
             // 验证是否为有效的十六进制字符串
             // SQLCipher 4.x: 96 hex chars (48 bytes)
             // SQLCipher 3.x: 64 hex chars (32 bytes)
             let validLengths = [64, 96]
-            return validLengths.contains(hexPart.count) && hexPart.allSatisfy { $0.isHexDigit }
+            return validLengths.contains(hexPart.count) && hexPart.allSatisfy(\.isHexDigit)
         }
 
         // 普通字符串密码总是有效
