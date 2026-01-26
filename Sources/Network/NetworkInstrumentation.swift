@@ -212,8 +212,13 @@ public final class CaptureURLProtocol: URLProtocol {
     // MARK: - URLProtocol Override
 
     override public class func canInit(with request: URLRequest) -> Bool {
+        let urlString = request.url?.absoluteString ?? "nil"
+
         // 检查 HTTP 捕获是否启用
-        guard DebugProbe.shared.isNetworkCaptureActive() else { return false }
+        guard DebugProbe.shared.isNetworkCaptureActive() else {
+            DebugLog.debug(.network, "[canInit] SKIP - NetworkCapture not active, url: \(urlString.prefix(80))")
+            return false
+        }
 
         // 防止循环拦截
         if URLProtocol.property(forKey: handledKey, in: request) != nil {
@@ -221,8 +226,13 @@ public final class CaptureURLProtocol: URLProtocol {
         }
 
         // 只拦截 HTTP/HTTPS 请求
-        guard let scheme = request.url?.scheme?.lowercased() else { return false }
-        guard scheme == "http" || scheme == "https" else { return false }
+        guard let scheme = request.url?.scheme?.lowercased() else {
+            DebugLog.debug(.network, "[canInit] SKIP - No scheme, url: \(urlString.prefix(80))")
+            return false
+        }
+        guard scheme == "http" || scheme == "https" else {
+            return false
+        }
 
         // 跳过 WebSocket 升级请求（这些由 WebSocketInstrumentation 处理）
         // WebSocket 握手请求包含 Upgrade: websocket 头
@@ -237,6 +247,7 @@ public final class CaptureURLProtocol: URLProtocol {
             return false
         }
 
+        DebugLog.debug(.network, "[canInit] CAPTURE - \(request.httpMethod ?? "GET") \(urlString.prefix(80))")
         return true
     }
 
@@ -424,6 +435,9 @@ public final class CaptureURLProtocol: URLProtocol {
         error: Error?,
         duration: TimeInterval
     ) {
+        let urlString = request.url?.absoluteString ?? "nil"
+        DebugLog.debug(.network, "[recordHTTPEvent] Recording: \(request.httpMethod ?? "GET") \(urlString.prefix(80))")
+
         // 构建请求模型
         var queryItems: [String: String] = [:]
         if
@@ -485,6 +499,7 @@ public final class CaptureURLProtocol: URLProtocol {
             isReplay: isReplay
         )
 
+        DebugLog.debug(.network, "[recordHTTPEvent] Calling EventCallbacks.reportHTTP, onHTTPEvent is \(EventCallbacks.onHTTPEvent == nil ? "nil" : "set")")
         EventCallbacks.reportHTTP(event)
     }
 

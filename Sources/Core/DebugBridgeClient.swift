@@ -504,6 +504,7 @@ public final class DebugBridgeClient: NSObject {
     /// 注册事件回调
     /// 插件通过 EventCallbacks.reportEvent() 发送事件
     private func registerEventCallback() {
+        DebugLog.debug(.bridge, "Registering onDebugEvent callback")
         EventCallbacks.onDebugEvent = { [weak self] event in
             self?.enqueueEvent(event)
         }

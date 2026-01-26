@@ -20,6 +20,7 @@ public enum EventCallbacks {
 
     /// 上报 HTTP 事件
     public static func reportHTTP(_ event: HTTPEvent) {
+        DebugLog.debug(.network, "[EventCallbacks] reportHTTP called, onHTTPEvent is \(onHTTPEvent == nil ? "nil" : "set")")
         onHTTPEvent?(event)
     }
 
@@ -47,6 +48,20 @@ public enum EventCallbacks {
 
     /// 上报调试事件到 BridgeClient
     public static func reportEvent(_ event: DebugEvent) {
+        let eventDesc: String
+        switch event {
+        case let .http(httpEvent):
+            eventDesc = "HTTP \(httpEvent.request.method) \(httpEvent.request.url.prefix(50))"
+        case let .log(logEvent):
+            eventDesc = "Log [\(logEvent.level)]"
+        case .webSocket:
+            eventDesc = "WebSocket"
+        case .stats:
+            eventDesc = "Stats"
+        case .performance:
+            eventDesc = "Performance"
+        }
+        DebugLog.debug(.bridge, "[EventCallbacks] reportEvent called: \(eventDesc), onDebugEvent is \(onDebugEvent == nil ? "nil" : "set")")
         onDebugEvent?(event)
     }
 

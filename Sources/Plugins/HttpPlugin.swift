@@ -68,7 +68,7 @@ public final class HttpPlugin: DebugProbePlugin, @unchecked Sendable {
         // 注册事件回调（CaptureURLProtocol 通过 EventCallbacks 上报事件）
         registerEventCallback()
 
-        // 启动网络捕获
+        // 启动网络捕获（如果已在 DebugProbe.start() 中启动，此调用会直接返回）
         NetworkInstrumentation.shared.start(mode: captureMode, scope: scope)
 
         stateQueue.sync { state = .running }
@@ -184,7 +184,9 @@ public final class HttpPlugin: DebugProbePlugin, @unchecked Sendable {
     /// CaptureURLProtocol 通过 EventCallbacks.reportHTTP() 上报事件
     /// HttpPlugin 接收后通过 EventCallbacks.reportEvent() 发送到 BridgeClient
     private func registerEventCallback() {
+        context?.logInfo("HttpPlugin registering onHTTPEvent callback")
         EventCallbacks.onHTTPEvent = { [weak self] httpEvent in
+            DebugLog.debug(.network, "[HttpPlugin] Received HTTP event: \(httpEvent.request.method) \(httpEvent.request.url.prefix(60))")
             self?.handleHTTPEvent(httpEvent)
         }
     }
@@ -197,7 +199,12 @@ public final class HttpPlugin: DebugProbePlugin, @unchecked Sendable {
     /// 处理 HTTP 事件
     /// - Parameter httpEvent: 从 CaptureURLProtocol 捕获的 HTTP 事件
     private func handleHTTPEvent(_ httpEvent: HTTPEvent) {
-        guard isEnabled else { return }
+        guard isEnabled else {
+            DebugLog.debug(.network, "[HttpPlugin] handleHTTPEvent: SKIPPED - isEnabled=false")
+            return
+        }
+
+        DebugLog.debug(.network, "[HttpPlugin] handleHTTPEvent: Forwarding to EventCallbacks.reportEvent")
 
         // 1. 通过统一回调发送到 BridgeClient
         EventCallbacks.reportEvent(.http(httpEvent))

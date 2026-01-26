@@ -108,6 +108,11 @@ public final class DebugProbe {
             return
         }
 
+        // ⚠️ 关键：必须在任何网络请求之前启用 URLSession Swizzle
+        // 否则在 start() 过程中创建的 URLSession（如 BridgeClient 的 WebSocket）
+        // 将无法被捕获
+        NetworkInstrumentation.shared.start(mode: settings.networkCaptureMode, scope: settings.networkCaptureScope)
+
         // 配置 Bridge Client
         var bridgeConfig = DebugBridgeClient.Configuration(hubURL: settings.hubURL, token: settings.token)
         bridgeConfig.maxBufferSize = settings.maxBufferSize
