@@ -7,6 +7,32 @@
 
 ---
 
+## [1.6.0] - 2025-01-27
+
+### 新增
+
+#### 加密数据库状态检测
+- 新增 `EncryptionStatus` 枚举（none/unlocked/locked）
+- `DBInfo` 新增 `encryptionStatus` 字段，用于区分数据库的加密状态
+- 支持检测 SQLCipher 加密数据库是否已解锁
+
+#### SQLCipher 配置增强
+- 新增 `preparationStatements` 支持，用于在应用密钥后执行额外的 PRAGMA 配置
+- 新增 `registerEncrypted(id:keyProvider:preparationSQL:)` 方法
+- 支持配置 `PRAGMA cipher_compatibility`、`PRAGMA kdf_iter` 等 SQLCipher 参数
+
+#### 加密注册管理
+- 新增 `unregisterEncryption(for:)` 方法，用于清理单个数据库的密钥提供者
+- 新增 `unregisterAllEncryption()` 方法，用于清理所有密钥提供者
+- 适用于用户切换账户时清理加密配置
+
+### 改进
+
+- 优化 `SQLiteInspector` 对加密数据库的处理逻辑
+- 改进数据库列表返回时的加密状态显示
+
+---
+
 ## [1.5.0] - 2025-12-17
 
 ### 新增
