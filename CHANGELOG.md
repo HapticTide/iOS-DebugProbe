@@ -7,7 +7,7 @@
 
 ---
 
-## [1.6.0] - 2025-01-27
+## [1.2.0] - 2025-01-27
 
 ### 新增
 
@@ -26,17 +26,6 @@
 - 新增 `unregisterAllEncryption()` 方法，用于清理所有密钥提供者
 - 适用于用户切换账户时清理加密配置
 
-### 改进
-
-- 优化 `SQLiteInspector` 对加密数据库的处理逻辑
-- 改进数据库列表返回时的加密状态显示
-
----
-
-## [1.5.0] - 2025-12-17
-
-### 新增
-
 #### 页面耗时监控
 - 新增 `PageTimingRecorder` 页面耗时记录器
 - 支持 UIKit 自动采集（viewWillAppear → viewDidAppear）
@@ -44,21 +33,9 @@
 - 支持手动 API 精确控制页面生命周期标记
 - 支持自定义标记点（markers）
 - 支持采样率控制和黑/白名单
-
-#### 性能监控增强
 - 新增页面耗时数据上报
 - 支持冷启动首屏标记
 - 支持页面导航类型（push/pop）
-
-### 修复
-
-- 修复 SwiftUI 页面被错误过滤的问题（shouldTrack 逻辑优化）
-
----
-
-## [1.4.0] - 2025-12-12
-
-### 新增
 
 #### 性能监控插件
 - 新增 `PerformancePlugin` 插件
@@ -66,24 +43,9 @@
 - 支持内存使用监控
 - 支持帧率 (FPS) 监控
 - 插件 ID: `performance`
-
-#### 插件系统增强
 - 插件数量从 7 个增加到 8 个
 - 完善插件生命周期管理
 - 优化事件路由机制
-
-### 文档
-
-- 更新 README.md 架构图
-- 修正内置插件列表（添加 PerformancePlugin）
-- 修正插件 ID（`network` → `http`）
-- 更新目录结构说明
-
----
-
-## [1.3.0] - 2025-12-06
-
-### 新增
 
 #### 断点调试完善
 - `BreakpointEngine` 网络层集成完成
@@ -93,12 +55,8 @@
 
 #### Chaos 故障注入
 - `ChaosEngine` 网络层集成完成
-- 支持延迟注入
-- 支持超时模拟
-- 支持连接重置
-- 支持错误码注入
-- 支持数据损坏
-- 支持请求丢弃
+- 支持延迟注入、超时模拟、连接重置
+- 支持错误码注入、数据损坏、请求丢弃
 
 #### 数据库检查增强
 - SQL 查询超时保护（5 秒自动中断）
@@ -111,28 +69,31 @@
 - 级别顺序：error > warning > info > debug > verbose
 - 移除 `fault` 级别，新增 `verbose` 级别
 
-### 修复
-
-- 修复 `tableExists()` 方法的内存 bug
-- 使用 `SQLITE_TRANSIENT` 确保字符串正确绑定
-- 修复 `BreakpointResumeDTO` 消息格式
-
----
-
-## [1.2.0] - 2025-12-04
-
-### 新增
-
 #### 请求重放
 - 完整实现 `replayRequest` 消息处理
 - 使用 `.ephemeral` URLSession 执行重放
 - 避免重放请求被重复记录
 
+### 改进
+
+- 优化 `SQLiteInspector` 对加密数据库的处理逻辑
+- 改进数据库列表返回时的加密状态显示
+
 ### 修复
 
-#### 协议兼容性
+- 修复 SwiftUI 页面被错误过滤的问题（shouldTrack 逻辑优化）
+- 修复 `tableExists()` 方法的内存 bug
+- 使用 `SQLITE_TRANSIENT` 确保字符串正确绑定
+- 修复 `BreakpointResumeDTO` 消息格式
 - 添加缺失的消息类型：`replayRequest`, `updateBreakpointRules`, `breakpointResume`, `updateChaosRules`
 - `ReplayRequestPayload` 字段同步：`requestId` → `id`，`body` 类型改为 `String?` (base64)
+
+### 文档
+
+- 更新 README.md 架构图
+- 修正内置插件列表（添加 PerformancePlugin）
+- 修正插件 ID（`network` → `http`）
+- 更新目录结构说明
 
 ---
 
