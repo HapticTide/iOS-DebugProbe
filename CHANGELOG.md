@@ -7,7 +7,7 @@
 
 ---
 
-## [1.2.0] - 2025-01-27
+## [1.2.0] - 2026-01-26
 
 ### 新增
 
@@ -26,105 +26,20 @@
 - 新增 `unregisterAllEncryption()` 方法，用于清理所有密钥提供者
 - 适用于用户切换账户时清理加密配置
 
-#### 页面耗时监控
-- 新增 `PageTimingRecorder` 页面耗时记录器
-- 支持 UIKit 自动采集（viewWillAppear → viewDidAppear）
-- 支持 SwiftUI UIHostingController 自动采集
-- 支持手动 API 精确控制页面生命周期标记
-- 支持自定义标记点（markers）
-- 支持采样率控制和黑/白名单
-- 新增页面耗时数据上报
-- 支持冷启动首屏标记
-- 支持页面导航类型（push/pop）
-
-#### 性能监控插件
-- 新增 `PerformancePlugin` 插件
-- 支持 CPU 使用率监控
-- 支持内存使用监控
-- 支持帧率 (FPS) 监控
-- 插件 ID: `performance`
-- 插件数量从 7 个增加到 8 个
-- 完善插件生命周期管理
-- 优化事件路由机制
-
-#### 断点调试完善
-- `BreakpointEngine` 网络层集成完成
-- 支持请求断点和响应断点
-- `breakpointHit` 消息正确上报到 Debug Hub
-- `breakpointResume` 命令正确处理
-
-#### Chaos 故障注入
-- `ChaosEngine` 网络层集成完成
-- 支持延迟注入、超时模拟、连接重置
-- 支持错误码注入、数据损坏、请求丢弃
-
-#### 数据库检查增强
-- SQL 查询超时保护（5 秒自动中断）
-- 结果集大小限制（最多 1000 行）
-- 并发查询限制（串行队列）
-- SQLite 内存安全修复
-
-#### 日志系统优化
-- 日志级别调整为 CocoaLumberjack 标准
-- 级别顺序：error > warning > info > debug > verbose
-- 移除 `fault` 级别，新增 `verbose` 级别
-
-#### 请求重放
-- 完整实现 `replayRequest` 消息处理
-- 使用 `.ephemeral` URLSession 执行重放
-- 避免重放请求被重复记录
+#### 数据库所有者标识
+- 新增 `ownerDisplayName` 字段支持用户友好标识
+- 支持显示数据库所属用户信息
 
 ### 改进
 
 - 优化 `SQLiteInspector` 对加密数据库的处理逻辑
 - 改进数据库列表返回时的加密状态显示
+- `listDatabases` 即使无法打开加密数据库也返回文件大小
+- 自动检测加密数据库并在无密钥时拒绝访问
 
 ### 修复
 
-- 修复 SwiftUI 页面被错误过滤的问题（shouldTrack 逻辑优化）
-- 修复 `tableExists()` 方法的内存 bug
-- 使用 `SQLITE_TRANSIENT` 确保字符串正确绑定
-- 修复 `BreakpointResumeDTO` 消息格式
-- 添加缺失的消息类型：`replayRequest`, `updateBreakpointRules`, `breakpointResume`, `updateChaosRules`
-- `ReplayRequestPayload` 字段同步：`requestId` → `id`，`body` 类型改为 `String?` (base64)
-
-### 文档
-
-- 更新 README.md 架构图
-- 修正内置插件列表（添加 PerformancePlugin）
-- 修正插件 ID（`network` → `http`）
-- 更新目录结构说明
-
----
-
-## [1.1.0] - 2025-12-03
-
-### 新增
-
-#### 配置管理
-- `DebugProbeSettings` 运行时配置管理
-- 支持 Info.plist 配置
-- 支持 UserDefaults 持久化
-- 配置变更通知机制
-
-#### 网络捕获增强
-- HTTP 自动拦截 (`URLSessionConfigurationSwizzle`)
-- WebSocket 连接级 Swizzle
-- WebSocket 消息级 Hook
-
-#### 可靠性增强
-- 事件持久化队列 (SQLite)
-- 断线重连自动恢复
-- 批量发送优化
-
-#### 内部日志
-- `DebugLog` 分级日志系统
-- 支持 verbose 开关
-
-### 变更
-
-- 重构为插件化架构
-- 统一使用 `PluginManager` 管理所有功能模块
+- 修复 SQLCipher 数据库支持的关键问题
 
 ---
 
@@ -150,75 +65,113 @@
 - 设备信息上报
 - 实时事件推送
 
+#### 配置管理
+- `DebugProbeSettings` 运行时配置管理
+- 支持 Info.plist 配置
+- 支持 UserDefaults 持久化
+- 配置变更通知机制
+
+#### 网络捕获
+- HTTP 自动拦截 (`URLSessionConfigurationSwizzle`)
+- WebSocket 连接级 Swizzle
+- WebSocket 消息级 Hook
+
+#### 可靠性
+- 事件持久化队列 (SQLite)
+- 断线重连自动恢复
+- 批量发送优化
+
+#### 内部日志
+- `DebugLog` 分级日志系统
+- 支持 verbose 开关
+
+#### 页面耗时监控
+- `PageTimingRecorder` 页面耗时记录器
+- 支持 UIKit 自动采集（viewWillAppear → viewDidAppear）
+- 支持 SwiftUI UIHostingController 自动采集
+- 支持手动 API 精确控制页面生命周期标记
+- 排除系统类和 SwiftUI UIHostingController
+
+#### 性能监控插件
+- `PerformancePlugin` 插件
+- 支持 CPU 使用率监控
+- 支持内存使用监控
+- 支持帧率 (FPS) 监控
+
+#### 断点调试
+- `BreakpointEngine` 网络层集成
+- 支持请求断点和响应断点
+
+#### Chaos 故障注入
+- `ChaosEngine` 网络层集成
+- 支持延迟注入、超时模拟、连接重置
+- 支持错误码注入、数据损坏、请求丢弃
+
+#### 数据库多用户支持
+- 支持多用户数据库隔离
+- SQL 查询超时保护（5 秒自动中断）
+- 结果集大小限制（最多 1000 行）
+- 并发查询限制（串行队列）
+
+#### 请求重放
+- 完整实现 `replayRequest` 消息处理
+- 使用 `.ephemeral` URLSession 执行重放
+
+### 变更
+
+- 插件化架构重构
+- 统一使用 `PluginManager` 管理所有功能模块
+- 通信时间改为毫秒级
+- 优化 premain 时间统计
+
+### 修复
+
+- 修复 HTTP 请求 body 参数解析问题
+- 修复包含 'create' 等关键词的查询报错问题
+- 修复 `tableExists()` 方法的内存 bug
+- 使用 `SQLITE_TRANSIENT` 确保字符串正确绑定
+
 ---
 
 ## 版本历史图表
 
 ```
-1.0.0 ────► 1.1.0 ────► 1.2.0 ────► 1.3.0 ────► 1.4.0 (当前)
-  │           │           │           │           │
-  │           │           │           │           └─ 性能监控插件
-  │           │           │           │              文档更新
-  │           │           │           │
-  │           │           │           └─ 断点/Chaos 完善
-  │           │           │              数据库检查增强
-  │           │           │              日志级别优化
-  │           │           │
-  │           │           └─ 请求重放实现
-  │           │              协议兼容性修复
-  │           │
-  │           └─ 配置管理系统
-  │              网络捕获增强
-  │              插件化架构
+1.0.0 ────────────────────────► 1.2.0 (当前)
+  │                                │
+  │                                └─ 加密数据库状态检测
+  │                                   SQLCipher 配置增强
+  │                                   ownerDisplayName 支持
   │
   └─ 核心功能实现
      HTTP/Log/WS/DB 捕获
      Mock/断点/Chaos 框架
+     页面耗时/性能监控
+     多用户数据库支持
 ```
 
 ---
 
 ## 升级指南
 
-### 从 1.3.x 升级到 1.4.x
+### 从 1.0.0 升级到 1.2.0
 
 1. **无破坏性变更**，直接更新依赖即可
 
-2. **新增 PerformancePlugin**：
+2. **加密数据库支持增强**：
    ```swift
-   // 默认自动注册，无需手动操作
-   // 如需禁用：
-   DebugProbe.shared.setPluginEnabled("performance", enabled: false)
+   // 注册带有 preparationSQL 的加密数据库
+   SQLiteInspector.shared.registerEncrypted(
+       id: dbId,
+       keyProvider: { passphrase },
+       preparationSQL: [
+           "PRAGMA cipher_compatibility = 4;",
+           "PRAGMA kdf_iter = 256000;"
+       ]
+   )
    ```
 
-### 从 1.2.x 升级到 1.3.x
-
-1. **日志级别变更**：
-   - 如果使用自定义日志级别映射，需要更新 `fault` → `error`
-   - 新增 `verbose` 级别支持
-
-2. **断点功能可用**：
-   - 断点和 Chaos 功能现已完全可用
-   - 确保 Debug Hub 版本 >= 1.3.0
-
-### 从 1.1.x 升级到 1.2.x
-
-1. **协议兼容**：
-   - SDK 会自动处理新消息类型
-   - 建议同时升级 Debug Hub
-
-### 从 1.0.x 升级到 1.1.x
-
-1. **配置迁移**：
+3. **ownerDisplayName 支持**：
    ```swift
-   // 旧方式（已废弃）
-   // DebugProbe.shared.start(hubURL: url, token: token)
-   
-   // 新方式
-   DebugProbeSettings.shared.configure(host: "192.168.1.100", port: 8081)
-   DebugProbe.shared.start()
+   // 数据库现在会显示所有者名称
+   // 需要配合 Debug Hub 1.2.0+ 使用
    ```
-
-2. **插件化架构**：
-   - 所有功能现通过插件系统管理
-   - 可单独启用/禁用各功能模块
