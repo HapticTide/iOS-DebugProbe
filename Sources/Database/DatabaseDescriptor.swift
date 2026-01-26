@@ -105,6 +105,12 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
     /// - 对于 shared：nil
     public var ownerIdentifier: String?
 
+    /// 数据库所有者的显示名称（易读标识）
+    /// 用于在 Inspector 中展示更友好的用户名
+    /// - 例如：昵称、用户名缩写、账户标签等
+    /// - 如果未提供，WebUI 将回退显示 ownerIdentifier
+    public var ownerDisplayName: String?
+
     /// 是否为加密数据库
     public let isEncrypted: Bool
 
@@ -121,6 +127,7 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         visibleInInspector: Bool = true,
         ownership: AccountOwnership = .shared,
         ownerIdentifier: String? = nil,
+        ownerDisplayName: String? = nil,
         isEncrypted: Bool = false,
         encryptionType: String? = nil
     ) {
@@ -132,6 +139,7 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         self.visibleInInspector = visibleInInspector
         self.ownership = ownership
         self.ownerIdentifier = ownerIdentifier
+        self.ownerDisplayName = ownerDisplayName
         self.isEncrypted = isEncrypted
         self.encryptionType = encryptionType
     }

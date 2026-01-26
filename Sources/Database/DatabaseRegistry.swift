@@ -195,11 +195,13 @@ public final class DatabaseRegistry: @unchecked Sendable {
     /// - Parameters:
     ///   - currentUserPathPrefix: 当前用户数据库路径前缀（如 Documents/{userUuid}/）
     ///   - sharedDbNamePatterns: 共享数据库名称/ID 中包含的关键词列表（忽略大小写）
+    ///   - ownerDisplayNames: 所有者标识符到显示名称的映射（可选）
     ///   - userPathComponentIndex: 路径中用户标识符所在的 component 索引（从 Documents 开始计算，默认为 0）
     /// - Note: 匹配优先级：currentUserPathPrefix > sharedDbNamePatterns > otherUser
     public func setOwnership(
         currentUserPathPrefix: String,
         sharedDbNamePatterns: [String] = [],
+        ownerDisplayNames: [String: String] = [:],
         userPathComponentIndex: Int = 0
     ) {
         lock.lock()
@@ -221,11 +223,16 @@ public final class DatabaseRegistry: @unchecked Sendable {
             // 判断归属（优先级：当前用户 > 共享 > 其他用户）
             let ownership: DatabaseDescriptor.AccountOwnership
             var ownerIdentifier: String?
+            var ownerDisplayName: String?
 
             if dbPath.hasPrefix(currentUserPathPrefix) {
                 // 路径匹配当前用户
                 ownership = .currentUser
                 ownerIdentifier = currentUserIdentifier
+                // 查找对应的显示名称
+                if let identifier = currentUserIdentifier {
+                    ownerDisplayName = ownerDisplayNames[identifier]
+                }
                 currentUserIds.append(id)
             } else if sharedDbNamePatterns.contains(where: { pattern in
                 let p = pattern.lowercased()
@@ -234,21 +241,27 @@ public final class DatabaseRegistry: @unchecked Sendable {
                 // 名称/ID 包含共享关键词
                 ownership = .shared
                 ownerIdentifier = nil
+                ownerDisplayName = nil
                 sharedIds.append(id)
             } else {
                 // 其余为其他用户
                 ownership = .otherUser
                 // 从路径中提取用户标识符
                 ownerIdentifier = extractUserIdentifier(from: dbPath)
+                // 查找对应的显示名称
+                if let identifier = ownerIdentifier {
+                    ownerDisplayName = ownerDisplayNames[identifier]
+                }
                 otherUserIds.append(id)
             }
 
             descriptor.ownership = ownership
             descriptor.ownerIdentifier = ownerIdentifier
+            descriptor.ownerDisplayName = ownerDisplayName
             registered = RegisteredDatabase(descriptor: descriptor, url: registered.url)
             databases[id] = registered
 
-            DebugLog.debug("[DatabaseRegistry] DB '\(id)' ownership=\(ownership.rawValue) owner=\(ownerIdentifier ?? "nil")")
+            DebugLog.debug("[DatabaseRegistry] DB '\(id)' ownership=\(ownership.rawValue) owner=\(ownerIdentifier ?? "nil") displayName=\(ownerDisplayName ?? "nil")")
         }
 
         DebugLog.info(
@@ -265,6 +278,7 @@ public final class DatabaseRegistry: @unchecked Sendable {
             var descriptor = registered.descriptor
             descriptor.ownership = .shared
             descriptor.ownerIdentifier = nil
+            descriptor.ownerDisplayName = nil
             registered = RegisteredDatabase(descriptor: descriptor, url: registered.url)
             databases[id] = registered
         }

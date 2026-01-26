@@ -119,7 +119,6 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         guard isValidIdentifier(table) else {
             throw DBInspectorError.invalidQuery("Invalid table name")
         }
-        }
 
         // 验证 orderBy 列名安全性
         if let orderBy, !isValidIdentifier(orderBy) {
