@@ -42,10 +42,12 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         for descriptor in descriptors {
             guard let url = registry.url(for: descriptor.id) else { continue }
 
+            // 先获取文件大小（不需要打开数据库）
+            let fileSize = getFileSize(at: url)
+
             do {
                 let dbId = descriptor.id
                 let tableCount = try await getTableCount(at: url, dbId: dbId)
-                let fileSize = getFileSize(at: url)
 
                 results.append(DBInfo(
                     descriptor: descriptor,
@@ -55,10 +57,11 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
                 ))
             } catch {
                 // 如果无法打开数据库，仍然显示它但标记为不可用
+                // 文件大小仍然可以显示
                 results.append(DBInfo(
                     descriptor: descriptor,
                     tableCount: 0,
-                    fileSizeBytes: nil,
+                    fileSizeBytes: fileSize,
                     absolutePath: url.path
                 ))
             }
