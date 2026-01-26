@@ -77,6 +77,13 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             throw DBInspectorError.accessDenied("Cannot inspect sensitive database")
         }
 
+        // 检查加密数据库是否有密钥
+        if let descriptor = registry.descriptor(for: dbId),
+           descriptor.isEncrypted,
+           !registry.hasKeyProvider(for: dbId) {
+            throw DBInspectorError.accessDenied("Encrypted database requires key provider")
+        }
+
         return try await queryTables(at: url, dbId: dbId)
     }
 
@@ -88,6 +95,13 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         // 检查敏感数据库
         if let descriptor = registry.descriptor(for: dbId), descriptor.isSensitive {
             throw DBInspectorError.accessDenied("Cannot inspect sensitive database")
+        }
+
+        // 检查加密数据库是否有密钥
+        if let descriptor = registry.descriptor(for: dbId),
+           descriptor.isEncrypted,
+           !registry.hasKeyProvider(for: dbId) {
+            throw DBInspectorError.accessDenied("Encrypted database requires key provider")
         }
 
         // 验证表名安全性
@@ -113,6 +127,13 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         // 检查敏感数据库
         if let descriptor = registry.descriptor(for: dbId), descriptor.isSensitive {
             throw DBInspectorError.accessDenied("Cannot inspect sensitive database")
+        }
+
+        // 检查加密数据库是否有密钥
+        if let descriptor = registry.descriptor(for: dbId),
+           descriptor.isEncrypted,
+           !registry.hasKeyProvider(for: dbId) {
+            throw DBInspectorError.accessDenied("Encrypted database requires key provider")
         }
 
         // 验证表名安全性
@@ -149,6 +170,13 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         // 检查敏感数据库
         if let descriptor = registry.descriptor(for: dbId), descriptor.isSensitive {
             throw DBInspectorError.accessDenied("Cannot query sensitive database")
+        }
+
+        // 检查加密数据库是否有密钥
+        if let descriptor = registry.descriptor(for: dbId),
+           descriptor.isEncrypted,
+           !registry.hasKeyProvider(for: dbId) {
+            throw DBInspectorError.accessDenied("Encrypted database requires key provider")
         }
 
         // 安全检查：只允许 SELECT 语句

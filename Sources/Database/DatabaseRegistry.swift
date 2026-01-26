@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SQLite3
 
 /// 数据库注册表 - 管理多个 SQLite 数据库
 public final class DatabaseRegistry: @unchecked Sendable {
@@ -372,12 +373,14 @@ public extension DatabaseRegistry {
     ///   - url: 数据库文件 URL
     ///   - kind: 数据库类型，默认 "other"
     ///   - isSensitive: 是否敏感数据，默认 false
+    ///   - isEncrypted: 是否加密数据库，默认 false
     func register(
         id: String,
         name: String,
         url: URL,
         kind: DatabaseDescriptor.Kind = "other",
-        isSensitive: Bool = false
+        isSensitive: Bool = false,
+        isEncrypted: Bool = false
     ) {
         let descriptor = DatabaseDescriptor(
             id: id,
@@ -385,7 +388,9 @@ public extension DatabaseRegistry {
             kind: kind,
             location: .custom(description: url.lastPathComponent),
             isSensitive: isSensitive,
-            visibleInInspector: true
+            visibleInInspector: true,
+            isEncrypted: isEncrypted,
+            encryptionType: isEncrypted ? "SQLCipher" : nil
         )
         register(descriptor: descriptor, url: url)
     }
@@ -484,12 +489,16 @@ public extension DatabaseRegistry {
             // 推断数据库类型
             let kind = inferKind(from: filename)
 
+            // 检测是否为加密数据库
+            let isEncrypted = isEncryptedDatabase(at: fileURL)
+
             register(
                 id: id,
                 name: formatDisplayName(fileURL.deletingPathExtension().lastPathComponent),
                 url: fileURL,
                 kind: kind,
-                isSensitive: isSensitive
+                isSensitive: isSensitive,
+                isEncrypted: isEncrypted
             )
             discovered.append(id)
         }
@@ -518,6 +527,46 @@ public extension DatabaseRegistry {
         let spaced = id.replacingOccurrences(of: "_", with: " ")
         // 首字母大写
         return spaced.prefix(1).uppercased() + spaced.dropFirst()
+    }
+
+    /// 检测数据库是否加密
+    /// 通过尝试打开数据库并读取 sqlite_master 来判断
+    /// - Parameter url: 数据库文件 URL
+    /// - Returns: 是否为加密数据库
+    private func isEncryptedDatabase(at url: URL) -> Bool {
+        var db: OpaquePointer?
+
+        // 尝试以只读模式打开
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+        let result = sqlite3_open_v2(url.path, &db, flags, nil)
+
+        guard result == SQLITE_OK, let database = db else {
+            sqlite3_close(db)
+            return false
+        }
+
+        defer { sqlite3_close(database) }
+
+        // 尝试读取 sqlite_master
+        // 如果数据库加密且没有提供密钥，这会失败并返回 "file is not a database" 或类似错误
+        let sql = "SELECT count(*) FROM sqlite_master"
+        var stmt: OpaquePointer?
+
+        if sqlite3_prepare_v2(database, sql, -1, &stmt, nil) != SQLITE_OK {
+            // 准备语句失败，检查错误信息
+            let errorMessage = String(cString: sqlite3_errmsg(database))
+            // SQLCipher 加密数据库的典型错误信息
+            if errorMessage.contains("not a database") || errorMessage.contains("encrypted") {
+                return true
+            }
+            // 其他错误也可能表示加密（保守判断）
+            return true
+        }
+
+        sqlite3_finalize(stmt)
+
+        // 能成功准备语句，说明不是加密数据库
+        return false
     }
 }
 
