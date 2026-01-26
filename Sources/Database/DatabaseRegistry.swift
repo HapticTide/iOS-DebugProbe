@@ -15,6 +15,9 @@ public final class DatabaseRegistry: @unchecked Sendable {
     /// 已注册的数据库
     private var databases: [String: RegisteredDatabase] = [:]
 
+    /// 已注册的密钥提供者
+    private var keyProviders: [String: DatabaseKeyProvider] = [:]
+
     /// 线程安全锁
     private let lock = NSLock()
 
@@ -60,6 +63,7 @@ public final class DatabaseRegistry: @unchecked Sendable {
         defer { lock.unlock() }
 
         databases.removeValue(forKey: id)
+        keyProviders.removeValue(forKey: id)
         DebugLog.info("[DatabaseRegistry] Unregistered database: \(id)")
     }
 
@@ -111,7 +115,78 @@ public final class DatabaseRegistry: @unchecked Sendable {
         defer { lock.unlock() }
 
         databases.removeAll()
+        keyProviders.removeAll()
         DebugLog.info("[DatabaseRegistry] Cleared all registrations")
+    }
+
+    // MARK: - Encrypted Database Support
+
+    /// 注册加密数据库
+    /// - Parameters:
+    ///   - descriptor: 数据库描述符（应设置 isEncrypted = true）
+    ///   - url: 数据库文件 URL
+    ///   - keyProvider: 密钥提供者
+    public func registerEncrypted(
+        descriptor: DatabaseDescriptor,
+        url: URL,
+        keyProvider: DatabaseKeyProvider
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        databases[descriptor.id] = RegisteredDatabase(descriptor: descriptor, url: url)
+        keyProviders[descriptor.id] = keyProvider
+        DebugLog.info("[DatabaseRegistry] Registered encrypted database: \(descriptor.id) (\(descriptor.encryptionType ?? "unknown"))")
+    }
+
+    /// 获取密钥提供者
+    /// - Parameter id: 数据库 ID
+    /// - Returns: 密钥提供者，如果数据库未加密则返回 nil
+    public func keyProvider(for id: String) -> DatabaseKeyProvider? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return keyProviders[id]
+    }
+
+    /// 检查数据库是否已注册密钥提供者
+    /// - Parameter id: 数据库 ID
+    /// - Returns: 是否有密钥提供者
+    public func hasKeyProvider(for id: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return keyProviders[id] != nil
+    }
+
+    // MARK: - Database Lookup
+
+    /// 根据 URL 查找数据库 ID
+    /// - Parameter url: 数据库文件 URL
+    /// - Returns: 数据库 ID，如果未找到则返回 nil
+    public func findDatabaseId(byUrl url: URL) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let standardizedUrl = url.standardized
+        for (id, registered) in databases {
+            if registered.url.standardized == standardizedUrl {
+                return id
+            }
+        }
+        return nil
+    }
+
+    /// 根据路径前缀查找数据库 ID
+    /// - Parameter pathPrefix: 路径前缀
+    /// - Returns: 匹配的数据库 ID 列表
+    public func findDatabaseIds(byPathPrefix pathPrefix: String) -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+
+        return databases
+            .filter { $0.value.url.path.hasPrefix(pathPrefix) }
+            .map(\.key)
     }
 
     // MARK: - Active State Management (多账户场景)

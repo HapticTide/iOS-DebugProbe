@@ -9,7 +9,7 @@ import Foundation
 import SQLite3
 
 /// SQLite 数据库检查器实现
-/// 使用原生 SQLite3 API，只读访问，不依赖 GRDB
+/// 使用原生 SQLite3 API，只读访问，支持 SQLCipher 加密数据库
 public final class SQLiteInspector: DBInspector, @unchecked Sendable {
     /// 单例
     public static let shared = SQLiteInspector()
@@ -29,9 +29,6 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
     /// SQL 查询最大返回行数
     private let maxQueryRows = 1000
 
-    /// 串行队列确保线程安全
-    private let queue = DispatchQueue(label: "com.debug.dbinspector", qos: .userInitiated)
-
     private init(registry: DatabaseRegistry = .shared) {
         self.registry = registry
     }
@@ -46,17 +43,9 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             guard let url = registry.url(for: descriptor.id) else { continue }
 
             do {
-                let (tableCount, fileSize) = try await withCheckedThrowingContinuation { continuation in
-                    queue.async {
-                        do {
-                            let tableCount = try self.getTableCount(at: url)
-                            let fileSize = self.getFileSize(at: url)
-                            continuation.resume(returning: (tableCount, fileSize))
-                        } catch {
-                            continuation.resume(throwing: error)
-                        }
-                    }
-                }
+                let dbId = descriptor.id
+                let tableCount = try await getTableCount(at: url, dbId: dbId)
+                let fileSize = getFileSize(at: url)
 
                 results.append(DBInfo(
                     descriptor: descriptor,
@@ -88,16 +77,7 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             throw DBInspectorError.accessDenied("Cannot inspect sensitive database")
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                do {
-                    let tables = try self.queryTables(at: url)
-                    continuation.resume(returning: tables)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        return try await queryTables(at: url, dbId: dbId)
     }
 
     public func describeTable(dbId: String, table: String) async throws -> [DBColumnInfo] {
@@ -115,16 +95,7 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             throw DBInspectorError.invalidQuery("Invalid table name")
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                do {
-                    let columns = try self.queryColumns(at: url, table: table)
-                    continuation.resume(returning: columns)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        return try await queryColumns(at: url, table: table, dbId: dbId)
     }
 
     public func fetchTablePage(
@@ -148,6 +119,7 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         guard isValidIdentifier(table) else {
             throw DBInspectorError.invalidQuery("Invalid table name")
         }
+        }
 
         // 验证 orderBy 列名安全性
         if let orderBy, !isValidIdentifier(orderBy) {
@@ -158,24 +130,15 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         let safePageSize = min(max(1, pageSize), maxPageSize)
         let safePage = max(1, page)
 
-        return try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                do {
-                    let result = try self.queryTablePage(
-                        at: url,
-                        dbId: dbId,
-                        table: table,
-                        page: safePage,
-                        pageSize: safePageSize,
-                        orderBy: orderBy,
-                        ascending: ascending
-                    )
-                    continuation.resume(returning: result)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        return try await queryTablePage(
+            at: url,
+            dbId: dbId,
+            table: table,
+            page: safePage,
+            pageSize: safePageSize,
+            orderBy: orderBy,
+            ascending: ascending
+        )
     }
 
     /// 执行自定义 SQL 查询（只允许 SELECT）
@@ -207,21 +170,17 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             }
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                do {
-                    let result = try self.executeQueryInternal(at: url, dbId: dbId, query: trimmedQuery)
-                    continuation.resume(returning: result)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
+        return try await executeQueryInternal(at: url, dbId: dbId, query: trimmedQuery)
     }
 
     // MARK: - Private SQLite Operations
 
-    private func openDatabase(at url: URL) throws -> OpaquePointer {
+    /// 打开数据库（支持加密数据库）
+    /// - Parameters:
+    ///   - url: 数据库文件 URL
+    ///   - dbId: 数据库 ID（用于查找密钥提供者）
+    /// - Returns: SQLite 数据库指针
+    private func openDatabase(at url: URL, dbId: String? = nil) async throws -> OpaquePointer {
         var db: OpaquePointer?
 
         // 以只读模式打开
@@ -238,11 +197,74 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         // 设置 busy_timeout - 等待数据库锁的最大时间
         sqlite3_busy_timeout(database, busyTimeout)
 
+        // 如果有 dbId，检查是否需要应用加密密钥
+        if let dbId, let keyProvider = registry.keyProvider(for: dbId) {
+            do {
+                // 直接 await 获取密钥，无死锁风险
+                let key = try await keyProvider.getKey()
+
+                // 验证密钥格式
+                guard isValidKeyFormat(key) else {
+                    sqlite3_close(database)
+                    throw DBInspectorError.accessDenied("Invalid encryption key format")
+                }
+
+                // 应用 SQLCipher 密钥
+                // 使用 PRAGMA key 设置密钥
+                let keySQL = "PRAGMA key = \"\(key)\""
+                if sqlite3_exec(database, keySQL, nil, nil, nil) != SQLITE_OK {
+                    let errorMessage = String(cString: sqlite3_errmsg(database))
+                    sqlite3_close(database)
+                    throw DBInspectorError.accessDenied("Failed to apply encryption key: \(errorMessage)")
+                }
+
+                // 验证密钥是否正确（尝试读取 sqlite_master）
+                let verifySQL = "SELECT count(*) FROM sqlite_master"
+                if sqlite3_exec(database, verifySQL, nil, nil, nil) != SQLITE_OK {
+                    let errorMessage = String(cString: sqlite3_errmsg(database))
+                    sqlite3_close(database)
+                    throw DBInspectorError.accessDenied("Invalid encryption key: \(errorMessage)")
+                }
+
+                DebugLog.debug("[SQLiteInspector] Successfully opened encrypted database: \(dbId)")
+            } catch let error as DBInspectorError {
+                throw error
+            } catch {
+                sqlite3_close(database)
+                throw DBInspectorError.accessDenied("Failed to get encryption key: \(error.localizedDescription)")
+            }
+        }
+
         return database
     }
 
-    private func getTableCount(at url: URL) throws -> Int {
-        let db = try openDatabase(at: url)
+    /// 验证密钥格式
+    /// - Parameter key: 密钥字符串
+    /// - Returns: 密钥格式是否有效
+    private func isValidKeyFormat(_ key: String) -> Bool {
+        // SQLCipher 支持两种密钥格式：
+        // 1. 普通字符串密码
+        // 2. 十六进制 keyspec: x'...'（SQLCipher 4.x 默认 256-bit key + 128-bit salt = 48 bytes = 96 hex chars）
+        if key.isEmpty {
+            return false
+        }
+
+        // 如果是 hex keyspec 格式，验证长度和字符
+        if key.hasPrefix("x'") && key.hasSuffix("'") {
+            let hexPart = String(key.dropFirst(2).dropLast(1))
+            // 验证是否为有效的十六进制字符串
+            // SQLCipher 4.x: 96 hex chars (48 bytes)
+            // SQLCipher 3.x: 64 hex chars (32 bytes)
+            let validLengths = [64, 96]
+            return validLengths.contains(hexPart.count) && hexPart.allSatisfy { $0.isHexDigit }
+        }
+
+        // 普通字符串密码总是有效
+        return true
+    }
+
+    private func getTableCount(at url: URL, dbId: String? = nil) async throws -> Int {
+        let db = try await openDatabase(at: url, dbId: dbId)
         defer { sqlite3_close(db) }
 
         let sql = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
@@ -264,8 +286,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64
     }
 
-    private func queryTables(at url: URL) throws -> [DBTableInfo] {
-        let db = try openDatabase(at: url)
+    private func queryTables(at url: URL, dbId: String? = nil) async throws -> [DBTableInfo] {
+        let db = try await openDatabase(at: url, dbId: dbId)
         defer { sqlite3_close(db) }
 
         let sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
@@ -308,8 +330,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         return Int(sqlite3_column_int(stmt, 0))
     }
 
-    private func queryColumns(at url: URL, table: String) throws -> [DBColumnInfo] {
-        let db = try openDatabase(at: url)
+    private func queryColumns(at url: URL, table: String, dbId: String? = nil) async throws -> [DBColumnInfo] {
+        let db = try await openDatabase(at: url, dbId: dbId)
         defer { sqlite3_close(db) }
 
         // 验证表是否存在
@@ -354,8 +376,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         pageSize: Int,
         orderBy: String?,
         ascending: Bool
-    ) throws -> DBTablePageResult {
-        let db = try openDatabase(at: url)
+    ) async throws -> DBTablePageResult {
+        let db = try await openDatabase(at: url, dbId: dbId)
         defer { sqlite3_close(db) }
 
         // 验证表是否存在
@@ -411,10 +433,10 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         )
     }
 
-    private func executeQueryInternal(at url: URL, dbId: String, query: String) throws -> DBQueryResponse {
+    private func executeQueryInternal(at url: URL, dbId: String, query: String) async throws -> DBQueryResponse {
         let startTime = CFAbsoluteTimeGetCurrent()
 
-        let db = try openDatabase(at: url)
+        let db = try await openDatabase(at: url, dbId: dbId)
         defer { sqlite3_close(db) }
 
         // 设置超时定时器 - 超时后强制中断查询

@@ -105,6 +105,12 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
     /// - 对于 shared：nil
     public var ownerIdentifier: String?
 
+    /// 是否为加密数据库
+    public let isEncrypted: Bool
+
+    /// 加密类型（如 "SQLCipher"、"SQLite SEE" 等）
+    public let encryptionType: String?
+
     /// 初始化
     public init(
         id: String,
@@ -114,7 +120,9 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         isSensitive: Bool = false,
         visibleInInspector: Bool = true,
         ownership: AccountOwnership = .shared,
-        ownerIdentifier: String? = nil
+        ownerIdentifier: String? = nil,
+        isEncrypted: Bool = false,
+        encryptionType: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -124,5 +132,7 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         self.visibleInInspector = visibleInInspector
         self.ownership = ownership
         self.ownerIdentifier = ownerIdentifier
+        self.isEncrypted = isEncrypted
+        self.encryptionType = encryptionType
     }
 }
