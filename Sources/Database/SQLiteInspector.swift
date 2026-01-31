@@ -474,19 +474,7 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         // 计算实际页码（如果提供了 targetRowId，则计算其所在页）
         var actualPage = page
         if let targetRowId, let targetRowIdInt = Int64(targetRowId) {
-            // 计算目标行在排序结果中的位置
-            let positionSQL = """
-                SELECT COUNT(*) FROM "\(table)" t1
-                WHERE EXISTS (
-                    SELECT 1 FROM "\(table)" t2
-                    WHERE t2.rowid = ?
-                    AND (
-                        t1.rowid < t2.rowid
-                        OR (t1.rowid = t2.rowid)
-                    )
-                )
-                """
-            // 更简单的方法：使用子查询计算行号
+            // 更简单的方法：使用子查询计算行号（优先使用窗口函数）
             let countSQL: String
             if let orderBy {
                 // 有排序时，计算在排序结果中的位置
@@ -518,6 +506,20 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
                     if rowNumber > 0 {
                         // 计算页码（从 1 开始）
                         actualPage = (rowNumber - 1) / pageSize + 1
+                    }
+                }
+            } else if orderBy == nil {
+                // 兼容旧版 SQLite（无窗口函数）：按 rowid 计算位置
+                let fallbackSQL = "SELECT COUNT(*) FROM \"\(table)\" WHERE rowid <= ?"
+                var fallbackStmt: OpaquePointer?
+                if sqlite3_prepare_v2(db, fallbackSQL, -1, &fallbackStmt, nil) == SQLITE_OK {
+                    defer { sqlite3_finalize(fallbackStmt) }
+                    sqlite3_bind_int64(fallbackStmt, 1, targetRowIdInt)
+                    if sqlite3_step(fallbackStmt) == SQLITE_ROW {
+                        let rowNumber = Int(sqlite3_column_int64(fallbackStmt, 0))
+                        if rowNumber > 0 {
+                            actualPage = (rowNumber - 1) / pageSize + 1
+                        }
                     }
                 }
             }
