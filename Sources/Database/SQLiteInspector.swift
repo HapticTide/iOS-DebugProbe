@@ -143,7 +143,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         page: Int,
         pageSize: Int,
         orderBy: String?,
-        ascending: Bool
+        ascending: Bool,
+        targetRowId: String? = nil
     ) async throws -> DBTablePageResult {
         guard let url = registry.url(for: dbId) else {
             throw DBInspectorError.databaseNotFound(dbId)
@@ -183,7 +184,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             page: safePage,
             pageSize: safePageSize,
             orderBy: orderBy,
-            ascending: ascending
+            ascending: ascending,
+            targetRowId: targetRowId
         )
     }
 
@@ -446,7 +448,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         page: Int,
         pageSize: Int,
         orderBy: String?,
-        ascending: Bool
+        ascending: Bool,
+        targetRowId: String?
     ) async throws -> DBTablePageResult {
         let db = try await openDatabase(at: url, dbId: dbId)
         defer { sqlite3_close(db) }
@@ -462,14 +465,69 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         // 获取总行数
         let totalRows = try? getRowCount(db: db, table: table)
 
-        // 构建查询 SQL
-        var sql = "SELECT * FROM \"\(table)\""
-
+        // 构建排序子句
+        var orderClause = ""
         if let orderBy {
-            sql += " ORDER BY \"\(orderBy)\" \(ascending ? "ASC" : "DESC")"
+            orderClause = " ORDER BY \"\(orderBy)\" \(ascending ? "ASC" : "DESC")"
         }
 
-        let offset = (page - 1) * pageSize
+        // 计算实际页码（如果提供了 targetRowId，则计算其所在页）
+        var actualPage = page
+        if let targetRowId, let targetRowIdInt = Int64(targetRowId) {
+            // 计算目标行在排序结果中的位置
+            let positionSQL = """
+                SELECT COUNT(*) FROM "\(table)" t1
+                WHERE EXISTS (
+                    SELECT 1 FROM "\(table)" t2
+                    WHERE t2.rowid = ?
+                    AND (
+                        t1.rowid < t2.rowid
+                        OR (t1.rowid = t2.rowid)
+                    )
+                )
+                """
+            // 更简单的方法：使用子查询计算行号
+            let countSQL: String
+            if let orderBy {
+                // 有排序时，计算在排序结果中的位置
+                countSQL = """
+                    WITH ordered_rows AS (
+                        SELECT rowid AS rid, ROW_NUMBER() OVER (\(orderClause.isEmpty ? "" : "ORDER BY \"\(orderBy)\" \(ascending ? "ASC" : "DESC")")) AS rn
+                        FROM "\(table)"
+                    )
+                    SELECT rn FROM ordered_rows WHERE rid = ?
+                    """
+            } else {
+                // 无排序时，按 rowid 顺序
+                countSQL = """
+                    WITH ordered_rows AS (
+                        SELECT rowid AS rid, ROW_NUMBER() OVER (ORDER BY rowid) AS rn
+                        FROM "\(table)"
+                    )
+                    SELECT rn FROM ordered_rows WHERE rid = ?
+                    """
+            }
+
+            var countStmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, countSQL, -1, &countStmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(countStmt) }
+                sqlite3_bind_int64(countStmt, 1, targetRowIdInt)
+
+                if sqlite3_step(countStmt) == SQLITE_ROW {
+                    let rowNumber = Int(sqlite3_column_int64(countStmt, 0))
+                    if rowNumber > 0 {
+                        // 计算页码（从 1 开始）
+                        actualPage = (rowNumber - 1) / pageSize + 1
+                    }
+                }
+            }
+        }
+
+        // 构建查询 SQL（包含 rowid 用于跳转高亮）
+        var sql = "SELECT rowid AS _rowid, * FROM \"\(table)\""
+        sql += orderClause
+
+        let offset = (actualPage - 1) * pageSize
         sql += " LIMIT \(pageSize) OFFSET \(offset)"
 
         var stmt: OpaquePointer?
@@ -496,7 +554,7 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         return DBTablePageResult(
             dbId: dbId,
             table: table,
-            page: page,
+            page: actualPage,
             pageSize: pageSize,
             totalRows: totalRows,
             columns: columns,
@@ -694,5 +752,209 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
 
         let pattern = "^[a-zA-Z_][a-zA-Z0-9_]*$"
         return identifier.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    // MARK: - 跨表搜索
+
+    /// 在数据库中跨表搜索关键词
+    /// - Parameters:
+    ///   - dbId: 数据库 ID
+    ///   - keyword: 搜索关键词
+    ///   - maxResultsPerTable: 每表最大返回结果数（默认 10）
+    /// - Returns: 搜索结果
+    public func searchInDatabase(
+        dbId: String,
+        keyword: String,
+        maxResultsPerTable: Int = 10
+    ) async throws -> DBSearchResponse {
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        guard let url = registry.url(for: dbId) else {
+            throw DBInspectorError.databaseNotFound(dbId)
+        }
+
+        // 检查敏感数据库
+        if let descriptor = registry.descriptor(for: dbId), descriptor.isSensitive {
+            throw DBInspectorError.accessDenied("Cannot search in sensitive database")
+        }
+
+        // 检查加密数据库是否有密钥
+        if
+            let descriptor = registry.descriptor(for: dbId),
+            descriptor.isEncrypted,
+            !registry.hasKeyProvider(for: dbId) {
+            throw DBInspectorError.accessDenied("Encrypted database requires key provider")
+        }
+
+        // 验证关键词
+        let trimmedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKeyword.isEmpty else {
+            throw DBInspectorError.invalidQuery("Search keyword cannot be empty")
+        }
+
+        // 转义 SQL LIKE 特殊字符
+        let escapedKeyword = escapeSQLLikePattern(trimmedKeyword)
+
+        let db = try await openDatabase(at: url, dbId: dbId)
+        defer { sqlite3_close(db) }
+
+        // 获取所有表
+        let tables = try queryTablesInternal(db: db)
+
+        var tableResults: [DBTableSearchResult] = []
+        var totalMatches = 0
+
+        // 遍历每个表进行搜索
+        for table in tables {
+            // 跳过系统表
+            if table.name.hasPrefix("sqlite_") { continue }
+
+            do {
+                if let result = try searchInTable(
+                    db: db,
+                    tableName: table.name,
+                    keyword: escapedKeyword,
+                    maxResults: maxResultsPerTable
+                ) {
+                    tableResults.append(result)
+                    totalMatches += result.matchCount
+                }
+            } catch {
+                // 单表搜索失败不影响整体，记录日志继续
+                DebugLog.warning("[SQLiteInspector] Search failed for table \(table.name): \(error)")
+            }
+        }
+
+        // 按匹配数排序，匹配多的排前面
+        tableResults.sort { $0.matchCount > $1.matchCount }
+
+        let searchDuration = (CFAbsoluteTimeGetCurrent() - startTime) * 1000 // 转换为毫秒
+
+        return DBSearchResponse(
+            dbId: dbId,
+            keyword: keyword,
+            tableResults: tableResults,
+            totalMatches: totalMatches,
+            searchDurationMs: searchDuration
+        )
+    }
+
+    /// 在单表中搜索关键词
+    private func searchInTable(
+        db: OpaquePointer,
+        tableName: String,
+        keyword: String,
+        maxResults: Int
+    ) throws -> DBTableSearchResult? {
+        // 获取表的列信息
+        let columns = try queryColumnsInternal(db: db, table: tableName)
+
+        // 筛选可搜索的文本类型列
+        let textColumns = columns.filter { column in
+            guard let type = column.type?.uppercased() else { return true } // 无类型默认可搜索
+            // SQLite 文本类型
+            return type.contains("TEXT") ||
+                   type.contains("CHAR") ||
+                   type.contains("CLOB") ||
+                   type.contains("VARCHAR") ||
+                   type.contains("STRING") ||
+                   type == "" // SQLite 动态类型
+        }
+
+        if textColumns.isEmpty {
+            return nil // 无文本列，跳过
+        }
+
+        // 构建 WHERE 条件
+        let whereConditions = textColumns.map { column in
+            "\"\(column.name)\" LIKE '%\(keyword)%' ESCAPE '\\'"
+        }.joined(separator: " OR ")
+
+        // 先查询匹配总数
+        let countSQL = "SELECT COUNT(*) FROM \"\(tableName)\" WHERE \(whereConditions)"
+        var countStmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, countSQL, -1, &countStmt, nil) == SQLITE_OK else {
+            throw DBInspectorError.internalError("Failed to prepare count statement")
+        }
+        defer { sqlite3_finalize(countStmt) }
+
+        guard sqlite3_step(countStmt) == SQLITE_ROW else {
+            throw DBInspectorError.internalError("Failed to execute count query")
+        }
+
+        let matchCount = Int(sqlite3_column_int(countStmt, 0))
+
+        if matchCount == 0 {
+            return nil // 无匹配
+        }
+
+        // 查询预览数据（包含 rowid 用于跳转）
+        let previewSQL = "SELECT rowid AS _rowid, * FROM \"\(tableName)\" WHERE \(whereConditions) LIMIT \(maxResults)"
+        var previewStmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, previewSQL, -1, &previewStmt, nil) == SQLITE_OK else {
+            throw DBInspectorError.internalError("Failed to prepare preview statement")
+        }
+        defer { sqlite3_finalize(previewStmt) }
+
+        var previewRows: [DBRow] = []
+        var matchedColumnNames = Set<String>()
+        let columnCount = sqlite3_column_count(previewStmt)
+
+        while sqlite3_step(previewStmt) == SQLITE_ROW {
+            var values: [String: String?] = [:]
+
+            for i in 0..<columnCount {
+                let columnName = String(cString: sqlite3_column_name(previewStmt, i))
+                let value = getColumnValue(stmt: previewStmt, index: i)
+                values[columnName] = value
+
+                // 检查该列是否包含关键词
+                if let value, value.localizedCaseInsensitiveContains(keyword.replacingOccurrences(of: "\\", with: "")) {
+                    matchedColumnNames.insert(columnName)
+                }
+            }
+
+            previewRows.append(DBRow(values: values))
+        }
+
+        return DBTableSearchResult(
+            tableName: tableName,
+            matchCount: matchCount,
+            matchedColumns: Array(matchedColumnNames).sorted(),
+            previewRows: previewRows,
+            columns: columns
+        )
+    }
+
+    /// 获取表列表（内部方法，不打开新连接）
+    private func queryTablesInternal(db: OpaquePointer) throws -> [DBTableInfo] {
+        let sql = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw DBInspectorError.internalError("Failed to query tables")
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var tables: [DBTableInfo] = []
+
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let name = String(cString: sqlite3_column_text(stmt, 0))
+            // 不获取行数以提高性能
+            tables.append(DBTableInfo(name: name, rowCount: nil))
+        }
+
+        return tables
+    }
+
+    /// 转义 SQL LIKE 模式中的特殊字符
+    private func escapeSQLLikePattern(_ pattern: String) -> String {
+        pattern
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+            .replacingOccurrences(of: "'", with: "''")
     }
 }

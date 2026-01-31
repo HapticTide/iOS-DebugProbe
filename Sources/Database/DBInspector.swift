@@ -159,12 +159,15 @@ public protocol DBInspector: Sendable {
     func describeTable(dbId: String, table: String) async throws -> [DBColumnInfo]
 
     /// 分页获取表数据
+    /// - Parameters:
+    ///   - targetRowId: 可选的目标行 ID，传入时会自动计算并跳转到包含该行的页面
     func fetchTablePage(
         dbId: String,
         table: String,
         page: Int,
         pageSize: Int,
         orderBy: String?,
-        ascending: Bool
+        ascending: Bool,
+        targetRowId: String?
     ) async throws -> DBTablePageResult
 }

@@ -16,7 +16,7 @@ public final class DebugProbe {
 
     // MARK: - Versions
 
-    public static var version: String { "1.5.0" }
+    public static var version: String { "1.2.1" }
 
     // MARK: - Notifications
 
@@ -42,6 +42,13 @@ public final class DebugProbe {
 
     /// 插件桥接适配器
     private var pluginBridgeAdapter: PluginBridgeAdapter?
+
+    // MARK: - Plugins Access
+
+    /// 获取日志插件实例（用于配置日志导出回调等）
+    public var logPlugin: LogPlugin? {
+        pluginManager.getPlugin(pluginId: BuiltinPluginId.log) as? LogPlugin
+    }
 
     // MARK: - Lifecycle
 
@@ -91,7 +98,7 @@ public final class DebugProbe {
     /// DebugProbe.shared.start()
     ///
     /// // 或先修改配置再启动
-    /// DebugProbeSettings.shared.configure(host: "192.168.1.100", port: 8081)
+    /// DebugProbeSettings.shared.configure(host: "192.168.1.100", port: 9527)
     /// DebugProbe.shared.start()
     /// ```
     public func start() {

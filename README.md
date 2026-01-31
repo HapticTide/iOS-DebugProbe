@@ -103,18 +103,18 @@ func application(_ application: UIApplication, didFinishLaunchingWithOptions...)
 ```swift
 // 方式一：在代码中设置默认值（适合打包时配置）
 DebugProbeSettings.defaultHost = "192.168.1.100"  // 默认 "127.0.0.1"
-DebugProbeSettings.defaultPort = 8081             // 默认 8081
+DebugProbeSettings.defaultPort = 9527             // 默认 9527
 
 // 方式二：运行时配置（会持久化到 UserDefaults）
 DebugProbeSettings.shared.configure(
     host: "192.168.1.100",
-    port: 8081,
+    port: 9527,
     token: "my-token"
 )
 
 // 方式三：通过 Info.plist 配置
 // DEBUGHUB_HOST = "192.168.1.100"
-// DEBUGHUB_PORT = 8081
+// DEBUGHUB_PORT = 9527
 // DEBUGHUB_TOKEN = "my-token"
 ```
 
@@ -368,7 +368,7 @@ DebugProbe 需要配合 [DebugHub](https://github.com/sunimp/DebugPlatform) 服�
 
 1. 启动 DebugHub 服务器
 2. 在 iOS App 中配置 DebugProbe 连接到 DebugHub
-3. 打开 Web UI (http://localhost:8081) 查看调试信息
+3. 打开 Web UI (http://localhost:9527) 查看调试信息
 
 ## Demo 工程
 

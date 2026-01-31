@@ -35,7 +35,7 @@ public final class DebugProbeSettings {
     /// 默认主机地址 (可配置)
     public static var defaultHost = "127.0.0.1"
     /// 默认端口 (可配置)
-    public static var defaultPort = 8081
+    public static var defaultPort = 9527
     /// 默认 Token (可配置)
     public static var defaultToken = "debug-token-2025"
     /// 默认缓冲区大小
@@ -378,7 +378,7 @@ public final class DebugProbeSettings {
     // MARK: - Quick Configuration
 
     /// 快速配置（用于扫码等场景）
-    public func configure(host: String, port: Int = 8081, token: String? = nil) {
+    public func configure(host: String, port: Int = 9527, token: String? = nil) {
         userDefaults.set(host, forKey: Keys.hubHost)
         userDefaults.set(port, forKey: Keys.hubPort)
         if let token {

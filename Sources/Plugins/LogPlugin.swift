@@ -37,6 +37,11 @@ public final class LogPlugin: DebugProbePlugin, @unchecked Sendable {
     /// 是否包含系统日志
     public var includeSystemLogs: Bool = false
 
+    /// 日志导出回调
+    /// 如果设置了此回调，当收到 export_logs 命令时会调用，期望返回 ZIP 文件的二进制数据
+    public var onExportLogs: (() async throws -> Data)?
+
+
     // MARK: - Private Properties
 
     private weak var context: PluginContext?
@@ -129,8 +134,36 @@ public final class LogPlugin: DebugProbePlugin, @unchecked Sendable {
         case "get_status":
             await handleGetStatus(command)
 
+        case "export_logs":
+            await handleExportLogs(command)
+
         default:
             sendErrorResponse(for: command, message: "Unknown command type: \(command.commandType)")
+        }
+    }
+
+    // MARK: - Command Handling
+
+    private func handleExportLogs(_ command: PluginCommand) async {
+        guard let onExportLogs = onExportLogs else {
+            sendErrorResponse(for: command, message: "Log export not supported (handler not registered)")
+            return
+        }
+
+        do {
+            let zipData = try await onExportLogs()
+            
+            // 返回 ZIP 数据作为 Payload
+            let response = PluginCommandResponse(
+                pluginId: pluginId,
+                commandId: command.commandId,
+                success: true,
+                errorMessage: nil,
+                payload: zipData
+            )
+            context?.sendCommandResponse(response)
+        } catch {
+            sendErrorResponse(for: command, message: "Log export failed: \(error.localizedDescription)")
         }
     }
 

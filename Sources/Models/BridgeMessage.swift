@@ -64,6 +64,9 @@ public enum BridgeMessage: Codable {
     /// 插件命令（服务端下发）
     case pluginCommand(PluginCommand)
 
+    /// 插件命令响应（客户端上报）
+    case pluginCommandResponse(PluginCommandResponse)
+
     /// 错误响应
     case error(code: Int, message: String)
 
@@ -92,6 +95,7 @@ public enum BridgeMessage: Codable {
         case dbCommand
         case dbResponse
         case pluginCommand
+        case pluginCommandResponse
         case error
     }
 
@@ -150,6 +154,9 @@ public enum BridgeMessage: Codable {
         case .pluginCommand:
             let command = try container.decode(PluginCommand.self, forKey: .payload)
             self = .pluginCommand(command)
+        case .pluginCommandResponse:
+            let response = try container.decode(PluginCommandResponse.self, forKey: .payload)
+            self = .pluginCommandResponse(response)
         case .error:
             let payload = try container.decode(ErrorPayload.self, forKey: .payload)
             self = .error(code: payload.code, message: payload.message)
@@ -210,6 +217,9 @@ public enum BridgeMessage: Codable {
         case let .pluginCommand(command):
             try container.encode(MessageType.pluginCommand, forKey: .type)
             try container.encode(command, forKey: .payload)
+        case let .pluginCommandResponse(response):
+            try container.encode(MessageType.pluginCommandResponse, forKey: .type)
+            try container.encode(response, forKey: .payload)
         case let .error(code, message):
             try container.encode(MessageType.error, forKey: .type)
             try container.encode(ErrorPayload(code: code, message: message), forKey: .payload)

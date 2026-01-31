@@ -55,7 +55,7 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
         }
 
         // 订阅 BridgeClient 的命令回调
-        bridgeClient?.onPluginCommandReceived = { [weak self] pluginId, commandType, payloadObject in
+        bridgeClient?.onPluginCommandReceived = { [weak self] pluginId, commandType, commandId, payloadObject in
             Task {
                 // 检查是否是系统命令（如 WebUI 插件状态同步）
                 if pluginId == "system" {
@@ -71,6 +71,7 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
                 let command = PluginCommand(
                     pluginId: pluginId,
                     commandType: commandType,
+                    commandId: commandId,
                     payload: payload
                 )
                 await self?.pluginManager.routeCommand(command)
@@ -165,8 +166,8 @@ public final class PluginBridgeAdapter: @unchecked Sendable {
             }
 
         default:
-            // 其他插件响应暂时只记录日志
-            break
+            // 其他插件响应直接发送
+            bridgeClient?.sendPluginCommandResponse(response)
         }
     }
 

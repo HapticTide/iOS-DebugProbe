@@ -92,9 +92,9 @@ public final class DebugBridgeClient: NSObject {
     public var onStateChanged: ((ConnectionState) -> Void)?
     public var onError: ((Error) -> Void)?
 
-    /// 插件命令回调：(pluginId, command, payload)
+    /// 插件命令回调：(pluginId, command, commandId, payload)
     /// payload 可以是字典 [String: Any] 或数组 [[String: Any]] 等任意 JSON 对象
-    public var onPluginCommandReceived: ((String, String, Any?) -> Void)?
+    public var onPluginCommandReceived: ((String, String, String, Any?) -> Void)?
 
     /// Bridge 消息回调（用于插件系统路由）
     public var onBridgeMessageReceived: ((BridgeMessage) -> Void)?
@@ -288,18 +288,18 @@ public final class DebugBridgeClient: NSObject {
             DebugLog.info(.bridge, "Received replay request for \(payload.url)")
             executeReplayRequest(payload)
 
-        case let .pluginCommand(command):
-            DebugLog.info(.bridge, "Received plugin command: \(command.commandType) for plugin: \(command.pluginId)")
-            // 解析 payload 为 JSON 对象（可能是字典或数组）
-            var payloadObject: Any?
-            if
-                let payloadData = command.payload,
-                let object = try? JSONSerialization.jsonObject(with: payloadData) {
-                payloadObject = object
-            }
-            DispatchQueue.main.async { [weak self] in
-                self?.onPluginCommandReceived?(command.pluginId, command.commandType, payloadObject)
-            }
+            case let .pluginCommand(command):
+                DebugLog.info(.bridge, "Received plugin command: \(command.commandType) for plugin: \(command.pluginId)")
+                // 解析 payload 为 JSON 对象（可能是字典或数组）
+                var payloadObject: Any?
+                if
+                    let payloadData = command.payload,
+                    let object = try? JSONSerialization.jsonObject(with: payloadData) {
+                    payloadObject = object
+                }
+                DispatchQueue.main.async { [weak self] in
+                    self?.onPluginCommandReceived?(command.pluginId, command.commandType, command.commandId, payloadObject)
+                }
 
         case let .error(code, errorMessage):
             let error = NSError(domain: "DebugBridge", code: code, userInfo: [NSLocalizedDescriptionKey: errorMessage])
@@ -383,6 +383,11 @@ public final class DebugBridgeClient: NSObject {
     /// 发送插件事件
     public func sendPluginEvent(_ event: PluginEvent) {
         send(.pluginEvent(event))
+    }
+
+    /// 发送插件命令响应
+    public func sendPluginCommandResponse(_ response: PluginCommandResponse) {
+        send(.pluginCommandResponse(response))
     }
 
     /// 发送插件状态变化消息

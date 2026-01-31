@@ -216,6 +216,18 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
                 return .failure(requestId: command.requestId, error: .invalidQuery("Missing dbId or sql"))
             }
             return await executeSQL(dbId: dbId, sql: sql, requestId: command.requestId)
+
+        case .searchDatabase:
+            guard let dbId = command.dbId, let keyword = command.keyword else {
+                return .failure(requestId: command.requestId, error: .invalidQuery("Missing dbId or keyword"))
+            }
+            let maxResultsPerTable = command.maxResultsPerTable ?? 10
+            return await searchDatabase(
+                dbId: dbId,
+                keyword: keyword,
+                maxResultsPerTable: maxResultsPerTable,
+                requestId: command.requestId
+            )
         }
     }
 
@@ -287,6 +299,27 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
     private func executeSQL(dbId: String, sql: String, requestId: String) async -> DBResponse {
         do {
             let result = try await SQLiteInspector.shared.executeQuery(dbId: dbId, query: sql)
+            return try .success(requestId: requestId, data: result)
+        } catch let error as DBInspectorError {
+            return .failure(requestId: requestId, error: error)
+        } catch {
+            return .failure(requestId: requestId, error: .internalError(error.localizedDescription))
+        }
+    }
+
+    /// 跨表搜索数据库
+    private func searchDatabase(
+        dbId: String,
+        keyword: String,
+        maxResultsPerTable: Int,
+        requestId: String
+    ) async -> DBResponse {
+        do {
+            let result = try await SQLiteInspector.shared.searchInDatabase(
+                dbId: dbId,
+                keyword: keyword,
+                maxResultsPerTable: maxResultsPerTable
+            )
             return try .success(requestId: requestId, data: result)
         } catch let error as DBInspectorError {
             return .failure(requestId: requestId, error: error)

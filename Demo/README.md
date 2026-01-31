@@ -56,7 +56,7 @@ open DebugProbeDemo.xcodeproj
 
 ### 4. 查看调试信息
 
-打开浏览器访问：http://127.0.0.1:8081
+打开浏览器访问：http://127.0.0.1:9527
 
 ## 项目结构
 
@@ -83,13 +83,13 @@ DebugProbeDemo/
 
 ```swift
 // 启动时自动读取 DebugProbeSettings.shared 中的配置
-// 默认连接到 ws://127.0.0.1:8081/debug-bridge
+// 默认连接到 ws://127.0.0.1:9527/debug-bridge
 DebugProbe.shared.start()
 
 // 如需自定义配置
 let settings = DebugProbeSettings.shared
 settings.hubHost = "192.168.1.100"  // 局域网 IP
-settings.hubPort = 8081
+settings.hubPort = 9527
 ```
 
 如需连接到其他地址，可在设置页面修改或直接修改 `DebugProbeSettings.shared`。

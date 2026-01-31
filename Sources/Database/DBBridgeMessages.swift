@@ -16,6 +16,7 @@ public enum DBCommandKind: String, Codable, Sendable {
     case describeTable
     case fetchTablePage
     case executeQuery
+    case searchDatabase // 跨表搜索
 }
 
 /// 数据库命令
@@ -29,6 +30,9 @@ public struct DBCommand: Codable, Sendable {
     public let orderBy: String?
     public let ascending: Bool?
     public let query: String? // SQL 查询语句
+    public let keyword: String? // 搜索关键词
+    public let maxResultsPerTable: Int? // 每表最大结果数
+    public let targetRowId: String? // 目标行 ID
 
     public init(
         requestId: String,
@@ -39,7 +43,10 @@ public struct DBCommand: Codable, Sendable {
         pageSize: Int? = nil,
         orderBy: String? = nil,
         ascending: Bool? = nil,
-        query: String? = nil
+        query: String? = nil,
+        keyword: String? = nil,
+        maxResultsPerTable: Int? = nil,
+        targetRowId: String? = nil
     ) {
         self.requestId = requestId
         self.kind = kind
@@ -50,6 +57,9 @@ public struct DBCommand: Codable, Sendable {
         self.orderBy = orderBy
         self.ascending = ascending
         self.query = query
+        self.keyword = keyword
+        self.maxResultsPerTable = maxResultsPerTable
+        self.targetRowId = targetRowId
     }
 }
 
@@ -141,5 +151,63 @@ public struct DBQueryResponse: Codable, Sendable {
         self.rows = rows
         self.rowCount = rowCount
         self.executionTimeMs = executionTimeMs
+    }
+}
+
+// MARK: - 跨表搜索响应
+
+/// 单表搜索结果
+public struct DBTableSearchResult: Codable, Sendable {
+    /// 表名
+    public let tableName: String
+    /// 匹配的总行数
+    public let matchCount: Int
+    /// 匹配的列名列表
+    public let matchedColumns: [String]
+    /// 预览行（前 N 行匹配数据）
+    public let previewRows: [DBRow]
+    /// 表的列信息
+    public let columns: [DBColumnInfo]
+
+    public init(
+        tableName: String,
+        matchCount: Int,
+        matchedColumns: [String],
+        previewRows: [DBRow],
+        columns: [DBColumnInfo]
+    ) {
+        self.tableName = tableName
+        self.matchCount = matchCount
+        self.matchedColumns = matchedColumns
+        self.previewRows = previewRows
+        self.columns = columns
+    }
+}
+
+/// 数据库搜索响应
+public struct DBSearchResponse: Codable, Sendable {
+    /// 数据库 ID
+    public let dbId: String
+    /// 搜索关键词
+    public let keyword: String
+    /// 各表的搜索结果
+    public let tableResults: [DBTableSearchResult]
+    /// 匹配的总行数
+    public let totalMatches: Int
+    /// 搜索耗时（毫秒）
+    public let searchDurationMs: Double
+
+    public init(
+        dbId: String,
+        keyword: String,
+        tableResults: [DBTableSearchResult],
+        totalMatches: Int,
+        searchDurationMs: Double
+    ) {
+        self.dbId = dbId
+        self.keyword = keyword
+        self.tableResults = tableResults
+        self.totalMatches = totalMatches
+        self.searchDurationMs = searchDurationMs
     }
 }

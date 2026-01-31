@@ -98,6 +98,8 @@ private enum KeychainDeviceIdManager {
 /// 设备信息模型，用于向 Debug Hub 注册设备
 public struct DeviceInfo: Codable {
     public let deviceId: String
+    /// App 本次启动的会话标识（重连不变，重启变化）
+    public let appSessionId: String
     /// 原始设备名称（系统设备名）
     public let deviceName: String
     /// 用户设置的设备别名（可选）
@@ -114,6 +116,7 @@ public struct DeviceInfo: Codable {
 
     public init(
         deviceId: String,
+        appSessionId: String,
         deviceName: String,
         deviceAlias: String? = nil,
         deviceModel: String,
@@ -127,6 +130,7 @@ public struct DeviceInfo: Codable {
         appIcon: String? = nil
     ) {
         self.deviceId = deviceId
+        self.appSessionId = appSessionId
         self.deviceName = deviceName
         self.deviceAlias = deviceAlias
         self.deviceModel = deviceModel
@@ -142,6 +146,8 @@ public struct DeviceInfo: Codable {
 }
 
 public enum DeviceInfoProvider {
+    private static let appSessionId = UUID().uuidString
+
     public static func current() -> DeviceInfo {
         let bundle = Bundle.main
 
@@ -195,6 +201,7 @@ public enum DeviceInfoProvider {
 
         return DeviceInfo(
             deviceId: deviceId,
+            appSessionId: appSessionId,
             deviceName: deviceName,
             deviceAlias: deviceAlias,
             deviceModel: deviceModel,
