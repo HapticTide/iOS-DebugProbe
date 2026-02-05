@@ -195,7 +195,9 @@ public final class CaptureURLProtocol: URLProtocol {
     private var receivedData: Data = .init()
     private var response: URLResponse?
     private var startTime: Date = .init()
-    private var requestId: String = ""
+    private var currentRequest: URLRequest?
+    private var currentRequestId: String = ""
+    private var pendingRedirectFromId: String?
     private var traceId: String?
     private var isMocked: Bool = false
     private var mockRuleId: String?
@@ -256,12 +258,7 @@ public final class CaptureURLProtocol: URLProtocol {
     }
 
     override public func startLoading() {
-        startTime = Date()
-        requestId = UUID().uuidString
         traceId = request.value(forHTTPHeaderField: "X-Trace-Id")
-
-        // 保存原始请求体（httpBody 在 URLProtocol 处理期间可能会被清空）
-        originalHttpBody = request.httpBody ?? readBodyStream(from: request)
 
         // 1. 处理 Mock 规则 (通过 EventCallbacks 委托给 MockPlugin)
         var modifiedRequest = request
@@ -272,6 +269,8 @@ public final class CaptureURLProtocol: URLProtocol {
             (modifiedRequest, mockResponse, ruleId) = mockHandler(request)
         }
         mockRuleId = ruleId
+
+        initializeRequestContext(modifiedRequest)
 
         if let mockResponse {
             // 直接返回 Mock 响应
@@ -339,9 +338,10 @@ public final class CaptureURLProtocol: URLProtocol {
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                let result = await breakpointChecker(requestId, modifiedRequest)
+                let result = await breakpointChecker(currentRequestId, modifiedRequest)
                 switch result {
                 case let .proceed(finalRequest):
+                    updateCurrentRequest(finalRequest)
                     proceedWithRequest(finalRequest)
                 case .abort:
                     let error = NSError(
@@ -426,6 +426,25 @@ public final class CaptureURLProtocol: URLProtocol {
         client?.urlProtocolDidFinishLoading(self)
     }
 
+    // MARK: - Request Context
+
+    private func initializeRequestContext(_ request: URLRequest, redirectFromId: String? = nil) {
+        currentRequestId = UUID().uuidString
+        currentRequest = request
+        pendingRedirectFromId = redirectFromId
+        startTime = Date()
+        receivedData = .init()
+        response = nil
+        taskMetrics = nil
+        responseAlreadySent = false
+        originalHttpBody = request.httpBody ?? readBodyStream(from: request)
+    }
+
+    private func updateCurrentRequest(_ request: URLRequest) {
+        currentRequest = request
+        originalHttpBody = request.httpBody ?? readBodyStream(from: request)
+    }
+
     // MARK: - Event Recording
 
     private func recordHTTPEvent(
@@ -433,7 +452,8 @@ public final class CaptureURLProtocol: URLProtocol {
         response: HTTPURLResponse?,
         data: Data?,
         error: Error?,
-        duration: TimeInterval
+        duration: TimeInterval,
+        redirectToUrl: String? = nil
     ) {
         let urlString = request.url?.absoluteString ?? "nil"
         DebugLog.debug(.network, "[recordHTTPEvent] Recording: \(request.httpMethod ?? "GET") \(urlString.prefix(80))")
@@ -452,7 +472,7 @@ public final class CaptureURLProtocol: URLProtocol {
         let requestBodyData = originalHttpBody ?? request.httpBody
 
         let httpRequest = HTTPEvent.Request(
-            id: requestId,
+            id: currentRequestId,
             method: request.httpMethod ?? "GET",
             url: request.url?.absoluteString ?? "",
             queryItems: queryItems,
@@ -462,16 +482,23 @@ public final class CaptureURLProtocol: URLProtocol {
             traceId: traceId
         )
 
+        var errorInfo = error.map { buildErrorInfo($0) }
+        if errorInfo == nil, let response, response.statusCode >= 400 {
+            errorInfo = buildHttpErrorInfo(response.statusCode)
+        }
+
         // 构建响应模型
         var httpResponse: HTTPEvent.Response?
         if let response {
+            let headers = normalizeHeaders(response.allHeaderFields)
             httpResponse = HTTPEvent.Response(
                 statusCode: response.statusCode,
-                headers: (response.allHeaderFields as? [String: String]) ?? [:],
+                headers: headers,
                 body: truncateBody(data),
                 endTime: Date(),
                 duration: duration,
-                errorDescription: error?.localizedDescription
+                errorDescription: error?.localizedDescription,
+                error: errorInfo
             )
         } else if let error {
             httpResponse = HTTPEvent.Response(
@@ -479,7 +506,8 @@ public final class CaptureURLProtocol: URLProtocol {
                 body: nil,
                 endTime: Date(),
                 duration: duration,
-                errorDescription: error.localizedDescription
+                errorDescription: error.localizedDescription,
+                error: errorInfo
             )
         }
 
@@ -489,6 +517,9 @@ public final class CaptureURLProtocol: URLProtocol {
         // 检测是否为重放请求
         let isReplay = request.value(forHTTPHeaderField: HTTPEvent.replayHeaderKey) == "true"
 
+        let redirectFromId = pendingRedirectFromId
+        pendingRedirectFromId = nil
+
         // 创建事件并上报
         let event = HTTPEvent(
             request: httpRequest,
@@ -496,7 +527,9 @@ public final class CaptureURLProtocol: URLProtocol {
             timing: timing,
             isMocked: isMocked,
             mockRuleId: mockRuleId,
-            isReplay: isReplay
+            isReplay: isReplay,
+            redirectFromId: redirectFromId,
+            redirectToUrl: redirectToUrl
         )
 
         DebugLog.debug(.network, "[recordHTTPEvent] Calling EventCallbacks.reportHTTP, onHTTPEvent is \(EventCallbacks.onHTTPEvent == nil ? "nil" : "set")")
@@ -624,11 +657,132 @@ public final class CaptureURLProtocol: URLProtocol {
 
         return data.isEmpty ? nil : data
     }
+
+    private func buildErrorInfo(_ error: Error) -> HTTPEvent.ErrorInfo {
+        let nsError = error as NSError
+        let domain = nsError.domain
+        let code = nsError.code
+        let message = nsError.localizedDescription
+
+        var category: HTTPEvent.ErrorInfo.Category = .unknown
+        var isNetworkError = false
+
+        if domain == NSURLErrorDomain {
+            switch code {
+            case NSURLErrorCancelled:
+                category = .cancelled
+                isNetworkError = false
+            case NSURLErrorTimedOut:
+                category = .timeout
+                isNetworkError = true
+            case NSURLErrorCannotFindHost,
+                 NSURLErrorDNSLookupFailed:
+                category = .dns
+                isNetworkError = true
+            case NSURLErrorSecureConnectionFailed,
+                 NSURLErrorServerCertificateUntrusted,
+                 NSURLErrorServerCertificateHasBadDate,
+                 NSURLErrorServerCertificateNotYetValid,
+                 NSURLErrorServerCertificateHasUnknownRoot,
+                 NSURLErrorClientCertificateRejected,
+                 NSURLErrorClientCertificateRequired:
+                category = .tls
+                isNetworkError = true
+            case NSURLErrorNotConnectedToInternet,
+                 NSURLErrorNetworkConnectionLost,
+                 NSURLErrorCannotConnectToHost,
+                 NSURLErrorCannotLoadFromNetwork,
+                 NSURLErrorResourceUnavailable,
+                 NSURLErrorInternationalRoamingOff,
+                 NSURLErrorDataNotAllowed,
+                 NSURLErrorCallIsActive:
+                category = .network
+                isNetworkError = true
+            default:
+                category = .network
+                isNetworkError = true
+            }
+        } else if domain == "DebugProbe" && code == -1 {
+            category = .cancelled
+            isNetworkError = false
+        }
+
+        return HTTPEvent.ErrorInfo(
+            domain: domain,
+            code: code,
+            category: category,
+            isNetworkError: isNetworkError,
+            message: message
+        )
+    }
+
+    private func buildHttpErrorInfo(_ statusCode: Int) -> HTTPEvent.ErrorInfo {
+        let message = "HTTP \(statusCode) \(HTTPURLResponse.localizedString(forStatusCode: statusCode))"
+        return HTTPEvent.ErrorInfo(
+            domain: "HTTP",
+            code: statusCode,
+            category: .http,
+            isNetworkError: false,
+            message: message
+        )
+    }
+
+    private func normalizeHeaders(_ headers: [AnyHashable: Any]) -> [String: String] {
+        var result: [String: String] = [:]
+        result.reserveCapacity(headers.count)
+        for (key, value) in headers {
+            let keyString = String(describing: key)
+            if let stringValue = value as? String {
+                result[keyString] = stringValue
+            } else {
+                result[keyString] = String(describing: value)
+            }
+        }
+        return result
+    }
 }
 
 // MARK: - URLSessionDataDelegate
 
 extension CaptureURLProtocol: URLSessionDataDelegate {
+    public func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest,
+        completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+        let fromRequest = currentRequest ?? self.request
+        let redirectToUrl = resolveRedirectTarget(response: response, newRequest: request)
+        let duration = Date().timeIntervalSince(startTime)
+        let previousRequestId = currentRequestId
+
+        recordHTTPEvent(
+            request: fromRequest,
+            response: response,
+            data: receivedData,
+            error: nil,
+            duration: duration,
+            redirectToUrl: redirectToUrl
+        )
+
+        // 为下一跳初始化新的请求上下文
+        initializeRequestContext(request, redirectFromId: previousRequestId)
+
+        completionHandler(request)
+    }
+
+    private func resolveRedirectTarget(response: HTTPURLResponse, newRequest: URLRequest) -> String? {
+        if let location = response.value(forHTTPHeaderField: "Location")?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !location.isEmpty {
+            if let resolved = URL(string: location, relativeTo: response.url)?.absoluteURL {
+                return resolved.absoluteString
+            }
+            return location
+        }
+        return newRequest.url?.absoluteString
+    }
+
     public func urlSession(
         _: URLSession,
         dataTask _: URLSessionDataTask,
@@ -661,11 +815,12 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
     public func urlSession(_: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
         let endTime = Date()
         let duration = endTime.timeIntervalSince(startTime)
+        let activeRequest = currentRequest ?? request
 
         // 如果有错误，直接处理
         if let error {
             recordHTTPEvent(
-                request: request,
+                request: activeRequest,
                 response: response as? HTTPURLResponse,
                 data: receivedData,
                 error: error,
@@ -678,7 +833,7 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
         // 检查响应阶段断点
         guard let httpResponse = response as? HTTPURLResponse else {
             recordHTTPEvent(
-                request: request,
+                request: activeRequest,
                 response: nil,
                 data: receivedData,
                 error: nil,
@@ -694,8 +849,8 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
                 guard let self else { return }
 
                 let modifiedResponse = await breakpointResponseChecker(
-                    requestId,
-                    request,
+                    currentRequestId,
+                    activeRequest,
                     httpResponse,
                     receivedData
                 )
@@ -704,7 +859,7 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
                     // 使用修改后的响应
                     handleBreakpointModifiedResponse(
                         modifiedResponse,
-                        originalRequest: request,
+                        originalRequest: activeRequest,
                         duration: duration
                     )
                 } else {
@@ -716,7 +871,7 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
                     }
 
                     recordHTTPEvent(
-                        request: request,
+                        request: activeRequest,
                         response: httpResponse,
                         data: receivedData,
                         error: nil,
@@ -728,7 +883,7 @@ extension CaptureURLProtocol: URLSessionDataDelegate {
         } else {
             // 断点功能未启用，直接使用原始响应
             recordHTTPEvent(
-                request: request,
+                request: activeRequest,
                 response: httpResponse,
                 data: receivedData,
                 error: nil,

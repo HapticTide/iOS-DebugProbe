@@ -89,6 +89,7 @@ public struct HTTPEvent: Codable {
         public let endTime: Date
         public let duration: TimeInterval
         public let errorDescription: String?
+        public let error: ErrorInfo?
 
         public init(
             statusCode: Int,
@@ -96,7 +97,8 @@ public struct HTTPEvent: Codable {
             body: Data? = nil,
             endTime: Date = Date(),
             duration: TimeInterval,
-            errorDescription: String? = nil
+            errorDescription: String? = nil,
+            error: ErrorInfo? = nil
         ) {
             self.statusCode = statusCode
             self.headers = headers
@@ -104,6 +106,7 @@ public struct HTTPEvent: Codable {
             self.endTime = endTime
             self.duration = duration
             self.errorDescription = errorDescription
+            self.error = error
         }
     }
 
@@ -159,6 +162,39 @@ public struct HTTPEvent: Codable {
         }
     }
 
+    /// 错误信息（结构化）
+    public struct ErrorInfo: Codable {
+        public enum Category: String, Codable {
+            case network
+            case timeout
+            case cancelled
+            case dns
+            case tls
+            case http
+            case unknown
+        }
+
+        public let domain: String?
+        public let code: Int?
+        public let category: Category?
+        public let isNetworkError: Bool?
+        public let message: String?
+
+        public init(
+            domain: String? = nil,
+            code: Int? = nil,
+            category: Category? = nil,
+            isNetworkError: Bool? = nil,
+            message: String? = nil
+        ) {
+            self.domain = domain
+            self.code = code
+            self.category = category
+            self.isNetworkError = isNetworkError
+            self.message = message
+        }
+    }
+
     /// 重放标记 header 名称
     public static let replayHeaderKey = "X-DebugProbe-Replay"
 
@@ -168,6 +204,10 @@ public struct HTTPEvent: Codable {
     public let isMocked: Bool
     public let mockRuleId: String?
     public let isReplay: Bool
+    /// 当前请求是否由上一个请求重定向而来
+    public let redirectFromId: String?
+    /// 当前请求的重定向目标 URL（仅对 3xx 响应有效）
+    public let redirectToUrl: String?
 
     public init(
         request: Request,
@@ -175,7 +215,9 @@ public struct HTTPEvent: Codable {
         timing: Timing? = nil,
         isMocked: Bool = false,
         mockRuleId: String? = nil,
-        isReplay: Bool = false
+        isReplay: Bool = false,
+        redirectFromId: String? = nil,
+        redirectToUrl: String? = nil
     ) {
         self.request = request
         self.response = response
@@ -183,6 +225,8 @@ public struct HTTPEvent: Codable {
         self.isMocked = isMocked
         self.mockRuleId = mockRuleId
         self.isReplay = isReplay
+        self.redirectFromId = redirectFromId
+        self.redirectToUrl = redirectToUrl
     }
 }
 
