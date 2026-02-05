@@ -17,6 +17,7 @@ public enum DBCommandKind: String, Codable, Sendable {
     case fetchTablePage
     case executeQuery
     case searchDatabase // 跨表搜索
+    case fetchRowsByRowIds // 按 rowid 批量取行（搜索结果分页）
 }
 
 /// 数据库命令
@@ -33,6 +34,7 @@ public struct DBCommand: Codable, Sendable {
     public let keyword: String? // 搜索关键词
     public let maxResultsPerTable: Int? // 每表最大结果数
     public let targetRowId: String? // 目标行 ID
+    public let rowIds: [String]? // 批量 rowid
 
     public init(
         requestId: String,
@@ -46,7 +48,8 @@ public struct DBCommand: Codable, Sendable {
         query: String? = nil,
         keyword: String? = nil,
         maxResultsPerTable: Int? = nil,
-        targetRowId: String? = nil
+        targetRowId: String? = nil,
+        rowIds: [String]? = nil
     ) {
         self.requestId = requestId
         self.kind = kind
@@ -60,6 +63,7 @@ public struct DBCommand: Codable, Sendable {
         self.keyword = keyword
         self.maxResultsPerTable = maxResultsPerTable
         self.targetRowId = targetRowId
+        self.rowIds = rowIds
     }
 }
 
@@ -166,6 +170,8 @@ public struct DBTableSearchResult: Codable, Sendable {
     public let matchedColumns: [String]
     /// 预览行（前 N 行匹配数据）
     public let previewRows: [DBRow]
+    /// 所有匹配行的 rowid（升序）
+    public let matchRowIds: [String]
     /// 表的列信息
     public let columns: [DBColumnInfo]
 
@@ -174,13 +180,30 @@ public struct DBTableSearchResult: Codable, Sendable {
         matchCount: Int,
         matchedColumns: [String],
         previewRows: [DBRow],
+        matchRowIds: [String],
         columns: [DBColumnInfo]
     ) {
         self.tableName = tableName
         self.matchCount = matchCount
         self.matchedColumns = matchedColumns
         self.previewRows = previewRows
+        self.matchRowIds = matchRowIds
         self.columns = columns
+    }
+}
+
+/// 按 rowid 批量取行响应
+public struct DBTableRowsResponse: Codable, Sendable {
+    public let dbId: String
+    public let table: String
+    public let columns: [DBColumnInfo]
+    public let rows: [DBRow]
+
+    public init(dbId: String, table: String, columns: [DBColumnInfo], rows: [DBRow]) {
+        self.dbId = dbId
+        self.table = table
+        self.columns = columns
+        self.rows = rows
     }
 }
 

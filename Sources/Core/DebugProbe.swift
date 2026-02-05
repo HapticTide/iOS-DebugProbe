@@ -16,7 +16,7 @@ public final class DebugProbe {
 
     // MARK: - Versions
 
-    public static var version: String { "1.2.4" }
+    public static var version: String { "1.2.5" }
 
     // MARK: - Notifications
 

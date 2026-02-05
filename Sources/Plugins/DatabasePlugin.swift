@@ -229,6 +229,18 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
                 maxResultsPerTable: maxResultsPerTable,
                 requestId: command.requestId
             )
+
+        case .fetchRowsByRowIds:
+            guard let dbId = command.dbId, let tableName = command.table else {
+                return .failure(requestId: command.requestId, error: .invalidQuery("Missing dbId or tableName"))
+            }
+            let rowIds = command.rowIds ?? []
+            return await fetchRowsByRowIds(
+                dbId: dbId,
+                tableName: tableName,
+                rowIds: rowIds,
+                requestId: command.requestId
+            )
         }
     }
 
@@ -322,6 +334,27 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
                 dbId: dbId,
                 keyword: keyword,
                 maxResultsPerTable: maxResultsPerTable
+            )
+            return try .success(requestId: requestId, data: result)
+        } catch let error as DBInspectorError {
+            return .failure(requestId: requestId, error: error)
+        } catch {
+            return .failure(requestId: requestId, error: .internalError(error.localizedDescription))
+        }
+    }
+
+    /// 按 rowid 批量取行（搜索结果分页）
+    private func fetchRowsByRowIds(
+        dbId: String,
+        tableName: String,
+        rowIds: [String],
+        requestId: String
+    ) async -> DBResponse {
+        do {
+            let result = try await SQLiteInspector.shared.fetchRowsByRowIds(
+                dbId: dbId,
+                table: tableName,
+                rowIds: rowIds
             )
             return try .success(requestId: requestId, data: result)
         } catch let error as DBInspectorError {

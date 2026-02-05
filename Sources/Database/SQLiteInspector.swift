@@ -189,6 +189,84 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         )
     }
 
+    /// 按 rowid 批量获取行（用于搜索结果分页）
+    public func fetchRowsByRowIds(
+        dbId: String,
+        table: String,
+        rowIds: [String]
+    ) async throws -> DBTableRowsResponse {
+        guard let url = registry.url(for: dbId) else {
+            throw DBInspectorError.databaseNotFound(dbId)
+        }
+
+        // 检查敏感数据库
+        if let descriptor = registry.descriptor(for: dbId), descriptor.isSensitive {
+            throw DBInspectorError.accessDenied("Cannot inspect sensitive database")
+        }
+
+        // 检查加密数据库是否有密钥
+        if
+            let descriptor = registry.descriptor(for: dbId),
+            descriptor.isEncrypted,
+            !registry.hasKeyProvider(for: dbId) {
+            throw DBInspectorError.accessDenied("Encrypted database requires key provider")
+        }
+
+        // 验证表名安全性
+        guard isValidIdentifier(table) else {
+            throw DBInspectorError.invalidQuery("Invalid table name")
+        }
+
+        let db = try await openDatabase(at: url, dbId: dbId)
+        defer { sqlite3_close(db) }
+
+        // 验证表是否存在
+        guard try tableExists(db: db, table: table) else {
+            throw DBInspectorError.tableNotFound(table)
+        }
+
+        // 获取列信息
+        let columns = try queryColumnsInternal(db: db, table: table)
+
+        let rowIdInts = rowIds.compactMap { Int64($0) }.sorted()
+        if rowIdInts.isEmpty {
+            return DBTableRowsResponse(dbId: dbId, table: table, columns: columns, rows: [])
+        }
+
+        let maxChunkSize = 900
+        var rows: [DBRow] = []
+
+        for start in stride(from: 0, to: rowIdInts.count, by: maxChunkSize) {
+            let end = min(start + maxChunkSize, rowIdInts.count)
+            let chunk = Array(rowIdInts[start..<end])
+            let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ",")
+            let sql = "SELECT rowid AS _rowid, * FROM \"\(table)\" WHERE rowid IN (\(placeholders)) ORDER BY rowid ASC"
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                throw DBInspectorError.internalError("Failed to prepare statement")
+            }
+            defer { sqlite3_finalize(stmt) }
+
+            for (index, rowId) in chunk.enumerated() {
+                sqlite3_bind_int64(stmt, Int32(index + 1), rowId)
+            }
+
+            let columnCount = sqlite3_column_count(stmt)
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                var values: [String: String?] = [:]
+                for i in 0..<columnCount {
+                    let columnName = String(cString: sqlite3_column_name(stmt, i))
+                    let value = getColumnValue(stmt: stmt, index: i)
+                    values[columnName] = value
+                }
+                rows.append(DBRow(values: values))
+            }
+        }
+
+        return DBTableRowsResponse(dbId: dbId, table: table, columns: columns, rows: rows)
+    }
+
     /// 执行自定义 SQL 查询（只允许 SELECT）
     public func executeQuery(dbId: String, query: String) async throws -> DBQueryResponse {
         guard let url = registry.url(for: dbId) else {
@@ -872,27 +950,27 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             "\"\(column.name)\" LIKE '%\(keyword)%' ESCAPE '\\'"
         }.joined(separator: " OR ")
 
-        // 先查询匹配总数
-        let countSQL = "SELECT COUNT(*) FROM \"\(tableName)\" WHERE \(whereConditions)"
-        var countStmt: OpaquePointer?
-
-        guard sqlite3_prepare_v2(db, countSQL, -1, &countStmt, nil) == SQLITE_OK else {
-            throw DBInspectorError.internalError("Failed to prepare count statement")
+        // 查询所有匹配 rowid（升序）
+        let rowIdSQL = "SELECT rowid FROM \"\(tableName)\" WHERE \(whereConditions) ORDER BY rowid ASC"
+        var rowIdStmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, rowIdSQL, -1, &rowIdStmt, nil) == SQLITE_OK else {
+            throw DBInspectorError.internalError("Failed to prepare rowid statement")
         }
-        defer { sqlite3_finalize(countStmt) }
+        defer { sqlite3_finalize(rowIdStmt) }
 
-        guard sqlite3_step(countStmt) == SQLITE_ROW else {
-            throw DBInspectorError.internalError("Failed to execute count query")
+        var matchRowIds: [String] = []
+        while sqlite3_step(rowIdStmt) == SQLITE_ROW {
+            let rowId = sqlite3_column_int64(rowIdStmt, 0)
+            matchRowIds.append(String(rowId))
         }
 
-        let matchCount = Int(sqlite3_column_int(countStmt, 0))
-
-        if matchCount == 0 {
+        if matchRowIds.isEmpty {
             return nil // 无匹配
         }
 
         // 查询预览数据（包含 rowid 用于跳转）
-        let previewSQL = "SELECT rowid AS _rowid, * FROM \"\(tableName)\" WHERE \(whereConditions) LIMIT \(maxResults)"
+        let previewLimit = max(1, min(maxResults, 3))
+        let previewSQL = "SELECT rowid AS _rowid, * FROM \"\(tableName)\" WHERE \(whereConditions) ORDER BY rowid ASC LIMIT \(previewLimit)"
         var previewStmt: OpaquePointer?
 
         guard sqlite3_prepare_v2(db, previewSQL, -1, &previewStmt, nil) == SQLITE_OK else {
@@ -923,9 +1001,10 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
 
         return DBTableSearchResult(
             tableName: tableName,
-            matchCount: matchCount,
+            matchCount: matchRowIds.count,
             matchedColumns: Array(matchedColumnNames).sorted(),
             previewRows: previewRows,
+            matchRowIds: matchRowIds,
             columns: columns
         )
     }
