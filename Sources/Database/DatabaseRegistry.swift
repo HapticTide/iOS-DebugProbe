@@ -25,6 +25,12 @@ public final class DatabaseRegistry: @unchecked Sendable {
     /// 线程安全锁
     private let lock = NSLock()
 
+    /// 刷新回调的实际存储（读写走 `lock`）
+    private var _refreshHandler: (() -> Void)?
+
+    /// 兜底执行刷新回调的串行队列（仅当 `performRefresh()` 在主线程被调用时用到）
+    private let refreshQueue = DispatchQueue(label: "com.sunimp.debugprobe.db.refresh")
+
     /// 注册的数据库结构
     private struct RegisteredDatabase {
         let descriptor: DatabaseDescriptor
@@ -33,18 +39,113 @@ public final class DatabaseRegistry: @unchecked Sendable {
 
     private init() {}
 
+    // MARK: - Refresh Handler
+
+    /// 刷新回调：WebUI 点「刷新」（即 `db.listDatabases` 命令）时，Probe 会在真正列举数据库之前
+    /// **在非主线程同步调用一次**，供宿主 App 重扫目录 / 重新注册运行期新出现的库文件。
+    ///
+    /// - Note: 调用发生在 Registry 的锁之外，因此回调内部可以安全地再调用 `register` / `setFamily` 等接口。
+    /// - Note: 线程安全由宿主 App 自行保证（Probe 只保证不在主线程调用、且同步等待其返回）。
+    public var refreshHandler: (() -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _refreshHandler
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            _refreshHandler = newValue
+        }
+    }
+
+    /// 同步执行一次刷新回调（不持有 Registry 的锁）
+    ///
+    /// 契约要求「在主线程之外同步调用一次」：
+    /// - 正常路径上 `DatabasePlugin` 是在并发执行器上处理命令的，本方法直接在当前线程调用回调；
+    /// - 若被误用在主线程调用，则派发到串行队列执行并同步等待（GCD 的 `sync` 可能直接复用调用线程，
+    ///   所以这里必须用 `async` + 信号量才能真正换线程）。
+    ///
+    /// - Warning: 回调内部不要再 `DispatchQueue.main.sync`，否则在上述兜底路径上会死锁。
+    public func performRefresh() {
+        guard let handler = refreshHandler else { return }
+
+        guard Thread.isMainThread else {
+            handler()
+            return
+        }
+
+        let semaphore = DispatchSemaphore(value: 0)
+        refreshQueue.async {
+            handler()
+            semaphore.signal()
+        }
+        semaphore.wait()
+    }
+
     // MARK: - Public API
 
     /// 注册数据库
     /// - Parameters:
     ///   - descriptor: 数据库描述符
     ///   - url: 数据库文件 URL
+    /// - Note: 重复注册同一个 id 时，新描述符中为 nil 的库族字段
+    ///   （`family` / `familyRole` / `familyNote` / `familyOrder`）会继承已注册的值，
+    ///   避免 `autoDiscover` 重扫把宿主 App 标注过的库族信息冲掉。
+    ///   如需清除库族标注，请显式调用 `setFamily(dbId:family:role:note:order:)` 传 nil。
     public func register(descriptor: DatabaseDescriptor, url: URL) {
         lock.lock()
         defer { lock.unlock() }
 
-        databases[descriptor.id] = RegisteredDatabase(descriptor: descriptor, url: url)
+        var merged = descriptor
+        if let existing = databases[descriptor.id]?.descriptor {
+            merged.family = merged.family ?? existing.family
+            merged.familyRole = merged.familyRole ?? existing.familyRole
+            merged.familyNote = merged.familyNote ?? existing.familyNote
+            merged.familyOrder = merged.familyOrder ?? existing.familyOrder
+        }
+
+        databases[descriptor.id] = RegisteredDatabase(descriptor: merged, url: url)
         DebugLog.info("[DatabaseRegistry] Registered database: \(descriptor.id) at \(url.path)")
+    }
+
+    /// 设置数据库的库族标注（多库场景）
+    ///
+    /// 语义来源应为宿主 App 自己的领域模型，Probe 只做透传、不做任何语义推断。
+    /// - Parameters:
+    ///   - dbId: 数据库 ID
+    ///   - family: 库族标识（同一账户下相同 family 的库在 UI 里归为一组），传 nil 表示清除
+    ///   - role: 该文件在库族中的角色短标签，传 nil 表示清除
+    ///   - note: 语义备注（UI 副标题 / tooltip），传 nil 表示清除
+    ///   - order: 库族内排序权重（越小越靠前），传 nil 表示清除
+    /// - Returns: 数据库是否已注册（未注册时不做任何事）
+    @discardableResult
+    public func setFamily(
+        dbId: String,
+        family: String?,
+        role: String? = nil,
+        note: String? = nil,
+        order: Int? = nil
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let registered = databases[dbId] else {
+            DebugLog.warning("[DatabaseRegistry] setFamily skipped, database not registered: \(dbId)")
+            return false
+        }
+
+        var descriptor = registered.descriptor
+        descriptor.family = family
+        descriptor.familyRole = role
+        descriptor.familyNote = note
+        descriptor.familyOrder = order
+        databases[dbId] = RegisteredDatabase(descriptor: descriptor, url: registered.url)
+
+        DebugLog.debug(
+            "[DatabaseRegistry] DB '\(dbId)' family=\(family ?? "nil") role=\(role ?? "nil") order=\(order.map(String.init) ?? "nil")"
+        )
+        return true
     }
 
     /// 注册数据库（自动解析 URL）
@@ -132,6 +233,7 @@ public final class DatabaseRegistry: @unchecked Sendable {
     ///   - url: 数据库文件 URL
     ///   - keyProvider: 密钥提供者
     ///   - preparationSQL: 应用密钥后需要执行的额外 SQL 语句（如 PRAGMA cipher_xxx 配置）
+    /// - Note: 与 `register(descriptor:url:)` 一致，重复注册同 id 时会继承已有的库族字段。
     public func registerEncrypted(
         descriptor: DatabaseDescriptor,
         url: URL,
@@ -141,7 +243,15 @@ public final class DatabaseRegistry: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        databases[descriptor.id] = RegisteredDatabase(descriptor: descriptor, url: url)
+        var merged = descriptor
+        if let existing = databases[descriptor.id]?.descriptor {
+            merged.family = merged.family ?? existing.family
+            merged.familyRole = merged.familyRole ?? existing.familyRole
+            merged.familyNote = merged.familyNote ?? existing.familyNote
+            merged.familyOrder = merged.familyOrder ?? existing.familyOrder
+        }
+
+        databases[descriptor.id] = RegisteredDatabase(descriptor: merged, url: url)
         keyProviders[descriptor.id] = keyProvider
         if !preparationSQL.isEmpty {
             preparationStatements[descriptor.id] = preparationSQL
@@ -168,19 +278,25 @@ public final class DatabaseRegistry: @unchecked Sendable {
         keyProviders.removeValue(forKey: id)
         preparationStatements.removeValue(forKey: id)
 
-        // 如果数据库描述符存在，更新其加密状态
-        if var registered = databases[id] {
+        // 如果数据库描述符存在，更新其加密状态（其余字段原样保留）
+        if let registered = databases[id] {
+            let old = registered.descriptor
             let updatedDescriptor = DatabaseDescriptor(
-                id: registered.descriptor.id,
-                name: registered.descriptor.name,
-                kind: registered.descriptor.kind,
-                location: registered.descriptor.location,
-                isSensitive: registered.descriptor.isSensitive,
-                visibleInInspector: registered.descriptor.visibleInInspector,
-                ownership: registered.descriptor.ownership,
-                ownerIdentifier: registered.descriptor.ownerIdentifier,
+                id: old.id,
+                name: old.name,
+                kind: old.kind,
+                location: old.location,
+                isSensitive: old.isSensitive,
+                visibleInInspector: old.visibleInInspector,
+                ownership: old.ownership,
+                ownerIdentifier: old.ownerIdentifier,
+                ownerDisplayName: old.ownerDisplayName,
                 isEncrypted: false,
-                encryptionType: nil
+                encryptionType: nil,
+                family: old.family,
+                familyRole: old.familyRole,
+                familyNote: old.familyNote,
+                familyOrder: old.familyOrder
             )
             databases[id] = RegisteredDatabase(descriptor: updatedDescriptor, url: registered.url)
         }
@@ -550,16 +666,36 @@ public extension DatabaseRegistry {
             let kind = inferKind(from: filename)
 
             // 检测是否为加密数据库
-            let isEncrypted = isEncryptedDatabase(at: fileURL)
+            let scannedIsEncrypted = isEncryptedDatabase(at: fileURL)
 
-            register(
+            // 重扫已注册的库时，不能把宿主 App 已经标注/注册过的加密状态与归属信息冲掉：
+            // - `isEncryptedDatabase` 是「无密钥打开 sqlite_master 是否失败」的启发式判断，
+            //   对刚创建、尚未写入密文头的 0 字节 SQLCipher 库会误判为「未加密」；
+            // - 归属（ownership/owner*）由 `setOwnership` 维护，重扫不应重置为 shared。
+            // 库族四字段由 `register(descriptor:url:)` 统一继承，这里不用重复处理。
+            let existing = descriptor(for: id)
+            let isEncrypted = (existing?.isEncrypted == true) || scannedIsEncrypted
+            let encryptionType: String? = if existing?.isEncrypted == true {
+                existing?.encryptionType ?? "SQLCipher"
+            } else {
+                isEncrypted ? "SQLCipher" : nil
+            }
+
+            let newDescriptor = DatabaseDescriptor(
                 id: id,
                 name: formatDisplayName(fileURL.deletingPathExtension().lastPathComponent),
-                url: fileURL,
                 kind: kind,
-                isSensitive: isSensitive,
-                isEncrypted: isEncrypted
+                location: .custom(description: fileURL.lastPathComponent),
+                // 敏感标记只升不降：重扫时若未传 sensitivePatterns，不能把已标敏感的库变成可查
+                isSensitive: (existing?.isSensitive == true) || isSensitive,
+                visibleInInspector: existing?.visibleInInspector ?? true,
+                ownership: existing?.ownership ?? .shared,
+                ownerIdentifier: existing?.ownerIdentifier,
+                ownerDisplayName: existing?.ownerDisplayName,
+                isEncrypted: isEncrypted,
+                encryptionType: encryptionType
             )
+            register(descriptor: newDescriptor, url: fileURL)
             discovered.append(id)
         }
 

@@ -246,6 +246,9 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
 
     /// 列出所有已注册的数据库
     private func listDatabases(requestId: String) async -> DBResponse {
+        // WebUI 点「刷新」时，先让宿主 App 有机会重扫目录、注册运行期新出现的库文件
+        DatabaseRegistry.shared.performRefresh()
+
         do {
             let databases = try await SQLiteInspector.shared.listDatabases()
             return try .success(requestId: requestId, data: DBListDatabasesResponse(databases: databases))
@@ -366,6 +369,9 @@ public final class DatabasePlugin: DebugProbePlugin, @unchecked Sendable {
 
     /// 列出数据库
     private func handleListDatabases(_ command: PluginCommand) async {
+        // 与 `.listDatabases` 命令保持一致：列举前先触发一次宿主 App 的刷新回调
+        DatabaseRegistry.shared.performRefresh()
+
         do {
             let databases = try await SQLiteInspector.shared.listDatabases()
             let payload = try JSONEncoder().encode(databases)

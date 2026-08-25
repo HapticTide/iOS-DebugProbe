@@ -117,6 +117,25 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
     /// 加密类型（如 "SQLCipher"、"SQLite SEE" 等）
     public let encryptionType: String?
 
+    // MARK: - 库族（多库场景）
+
+    /// 库族标识：同一账户下 family 相同的库在 Inspector 中归为一组
+    /// - 例如 `main.sqlite` / `search_index.sqlite` / `archive_0.sqlite` 同属 `"app"`
+    /// - 由宿主 App 填值，Probe 只透传，不做任何语义推断
+    public var family: String?
+
+    /// 该文件在库族中的角色（短标签，UI 直接显示）
+    /// - 例如 `"主库"` / `"FTS 索引"` / `"归档分片 0"`
+    public var familyRole: String?
+
+    /// 语义备注（UI 作为副标题 / tooltip）
+    /// - 例如 `"不可再生 · 必须备份"` / `"可重建 · 不备份"`
+    public var familyNote: String?
+
+    /// 库族内排序权重，越小越靠前
+    /// - 例如 main=0、search_index=1、archive_N=100+N
+    public var familyOrder: Int?
+
     /// 初始化
     public init(
         id: String,
@@ -129,7 +148,11 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         ownerIdentifier: String? = nil,
         ownerDisplayName: String? = nil,
         isEncrypted: Bool = false,
-        encryptionType: String? = nil
+        encryptionType: String? = nil,
+        family: String? = nil,
+        familyRole: String? = nil,
+        familyNote: String? = nil,
+        familyOrder: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -142,5 +165,9 @@ public struct DatabaseDescriptor: Codable, Identifiable, Hashable, Sendable {
         self.ownerDisplayName = ownerDisplayName
         self.isEncrypted = isEncrypted
         self.encryptionType = encryptionType
+        self.family = family
+        self.familyRole = familyRole
+        self.familyNote = familyNote
+        self.familyOrder = familyOrder
     }
 }
