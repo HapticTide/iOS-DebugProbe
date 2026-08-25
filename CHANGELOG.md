@@ -7,6 +7,30 @@
 
 ---
 
+## [1.2.6] - 2026-08-25
+
+### 新增
+
+- **多库（库族）标注**: `DatabaseDescriptor` 新增 `family` / `familyRole` / `familyNote` / `familyOrder` 四个可选字段，
+  供宿主 App 把同一目录下的多个库（如 `main.sqlite` / `search_index.sqlite` / `archive_N.sqlite`）在 Inspector 中归组展示；
+  Probe 只透传，不做语义推断
+- **`DatabaseRegistry.setFamily(dbId:family:role:note:order:)`**: 标注 / 清除库族信息
+- **`DatabaseRegistry.refreshHandler`**: WebUI 点「刷新」（`db.listDatabases`）时，Probe 会在列举数据库之前
+  在非主线程同步调用一次，供宿主 App 重扫目录、注册运行期新出现的库文件
+- **虚拟表 / 影子表识别**: `DBTableInfo` 新增 `kind`（`table` / `virtual` / `shadow`）、`module`（如 `fts5`）、
+  `parentTable`；`listTables` 与跨表搜索都会带上，跨表搜索默认跳过影子表
+
+### 修复
+
+- **库族字段不再被冲掉**: `register`（重复注册同 id）、`registerEncrypted`、`unregisterEncryption`、`autoDiscover`
+  重扫等所有重建 descriptor 的路径都会保留库族四字段
+- **`autoDiscover` 重扫不再降级加密状态**: 已注册为加密的库不会被启发式扫描结果覆盖成未加密
+  （空文件 / 刚创建的 SQLCipher 库会被误判为明文）；归属（`ownership` / `ownerIdentifier` / `ownerDisplayName`）
+  与可见性也一并保留，敏感标记只升不降
+- **`unregisterEncryption` 丢失 `ownerDisplayName`**: 重建 descriptor 时漏传该字段，已修复
+
+---
+
 ## [1.2.5] - 2026-02-05
 
 ### 新增

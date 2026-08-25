@@ -6,7 +6,7 @@ iOS App 调试探针 SDK，用于实时捕获和分析 App 的网络请求、日
 >
 > **本项目全部代码和文档均由 AI Agent 生成**
 
-> **当前版本**: 1.2.5 | [更新日志](CHANGELOG.md)
+> **当前版本**: 1.2.6 | [更新日志](CHANGELOG.md)
 > 
 > **最后更新**: 2026-02-05
 
@@ -166,6 +166,25 @@ DatabaseRegistry.shared.register(
 // 或自动发现目录下的所有 SQLite 数据库
 DatabaseRegistry.shared.autoDiscover(in: documentsURL)
 ```
+
+多库场景下，可以把同一目录里的几个库标注成一个「库族」，WebUI 会按 `family` 归组展示：
+
+```swift
+// family / role / note / order 的语义由宿主 App 决定，Probe 只透传
+DatabaseRegistry.shared.setFamily(dbId: "main", family: "app", role: "主库", note: "不可再生 · 必须备份", order: 0)
+DatabaseRegistry.shared.setFamily(dbId: "search_index", family: "app", role: "FTS 索引", note: "可重建 · 不备份", order: 1)
+DatabaseRegistry.shared.setFamily(dbId: "archive_0", family: "app", role: "归档分片 0", note: "可再生 · 不备份", order: 100)
+
+// WebUI 点「刷新」时重扫目录，让运行期新出现 / 被删除重建的库文件也能被看到
+// 注意：Probe 会在非主线程同步调用它，回调内部不要再 DispatchQueue.main.sync
+DatabaseRegistry.shared.refreshHandler = {
+    DatabaseRegistry.shared.autoDiscover(in: userDirectoryURL)
+    // ...重新标注 family、重新注册加密库的 keyProvider
+}
+```
+
+标注过的库族信息在重复注册、`registerEncrypted`、`autoDiscover` 重扫等路径上都会保留，
+不需要每次重扫后手动补标（但重扫后新出现的库仍需标注）。
 
 ### 7. 自定义日志（可选）
 

@@ -40,5 +40,10 @@ let package = Package(
             path: "Sources",
             exclude: ["Core/PreMain/DPPreMainMonitor.c", "Core/PreMain/include"]
         ),
+        .testTarget(
+            name: "DebugProbeTests",
+            dependencies: ["DebugProbe"],
+            path: "Tests/DebugProbeTests"
+        ),
     ]
 )
