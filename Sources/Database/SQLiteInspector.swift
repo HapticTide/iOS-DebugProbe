@@ -441,7 +441,23 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         let db = try await openDatabase(at: url, dbId: dbId)
         defer { sqlite3_close(db) }
 
-        let sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        let sql = "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        let entries = try readSchemaEntries(db: db, sql: sql)
+
+        // 先分类（virtual / shadow / table），再逐表取行数
+        return Self.classifyTables(entries).map { entry in
+            DBTableInfo(
+                name: entry.name,
+                rowCount: try? getRowCount(db: db, table: entry.name),
+                kind: entry.kind.rawValue,
+                module: entry.module,
+                parentTable: entry.parentTable
+            )
+        }
+    }
+
+    /// 读取 sqlite_master 中的 (name, sql) 列表
+    private func readSchemaEntries(db: OpaquePointer, sql: String) throws -> [(name: String, sql: String?)] {
         var stmt: OpaquePointer?
 
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
@@ -449,19 +465,16 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         }
         defer { sqlite3_finalize(stmt) }
 
-        var tables: [DBTableInfo] = []
+        var entries: [(name: String, sql: String?)] = []
 
         while sqlite3_step(stmt) == SQLITE_ROW {
             guard let namePtr = sqlite3_column_text(stmt, 0) else { continue }
             let name = String(cString: namePtr)
-
-            // 获取行数
-            let rowCount = try? getRowCount(db: db, table: name)
-
-            tables.append(DBTableInfo(name: name, rowCount: rowCount))
+            let createSQL = sqlite3_column_text(stmt, 1).map { String(cString: $0) }
+            entries.append((name: name, sql: createSQL))
         }
 
-        return tables
+        return entries
     }
 
     private func getRowCount(db: OpaquePointer, table: String) throws -> Int {
@@ -889,6 +902,9 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             // 跳过系统表
             if table.name.hasPrefix("sqlite_") { continue }
 
+            // 跳过虚拟表的影子表：内容是索引/分词的内部编码，搜出来对使用者无意义
+            if table.isShadow { continue }
+
             do {
                 if let result = try searchInTable(
                     db: db,
@@ -1011,23 +1027,89 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
 
     /// 获取表列表（内部方法，不打开新连接）
     private func queryTablesInternal(db: OpaquePointer) throws -> [DBTableInfo] {
-        let sql = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        var stmt: OpaquePointer?
+        let sql = "SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name"
+        let entries = try readSchemaEntries(db: db, sql: sql)
 
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
-            throw DBInspectorError.internalError("Failed to query tables")
+        // 不获取行数以提高性能
+        return Self.classifyTables(entries).map { entry in
+            DBTableInfo(
+                name: entry.name,
+                rowCount: nil,
+                kind: entry.kind.rawValue,
+                module: entry.module,
+                parentTable: entry.parentTable
+            )
         }
-        defer { sqlite3_finalize(stmt) }
+    }
 
-        var tables: [DBTableInfo] = []
+    // MARK: - 虚拟表 / 影子表判定
 
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let name = String(cString: sqlite3_column_text(stmt, 0))
-            // 不获取行数以提高性能
-            tables.append(DBTableInfo(name: name, rowCount: nil))
+    /// 表分类结果
+    struct ClassifiedTable {
+        let name: String
+        let kind: DBTableKind
+        let module: String?
+        let parentTable: String?
+    }
+
+    /// 影子表后缀 → 所属虚拟表模块族
+    /// - FTS5: `_data` / `_idx` / `_content` / `_docsize` / `_config`
+    /// - FTS3-4: `_segments` / `_segdir` / `_stat`（`_content` / `_docsize` 与 FTS5 重合）
+    /// - rtree: `_node` / `_rowid` / `_parent`
+    static let shadowTableSuffixes: [String] = [
+        "_data", "_idx", "_content", "_docsize", "_config",
+        "_segments", "_segdir", "_stat",
+        "_node", "_rowid", "_parent",
+    ]
+
+    /// 匹配 `CREATE VIRTUAL TABLE [IF NOT EXISTS] <name> USING <module>` 并捕获模块名
+    private static let virtualTableRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: #"CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[^(]*?\bUSING\s+([A-Za-z_][A-Za-z0-9_]*)"#,
+        options: [.caseInsensitive, .dotMatchesLineSeparators]
+    )
+
+    /// 从 `sqlite_master.sql` 解析虚拟表模块名（小写）；非虚拟表返回 nil
+    static func virtualTableModule(fromCreateSQL sql: String?) -> String? {
+        guard let sql, let regex = virtualTableRegex else { return nil }
+
+        let range = NSRange(sql.startIndex..., in: sql)
+        guard
+            let match = regex.firstMatch(in: sql, options: [], range: range),
+            match.numberOfRanges > 1,
+            let moduleRange = Range(match.range(at: 1), in: sql)
+        else {
+            return nil
         }
 
-        return tables
+        return String(sql[moduleRange]).lowercased()
+    }
+
+    /// 对 `sqlite_master` 的 (name, sql) 列表做 virtual / shadow / table 分类
+    /// - Note: shadow 判定要求「后缀命中」且「去掉后缀后的名字确实是同库中的虚拟表」
+    static func classifyTables(_ entries: [(name: String, sql: String?)]) -> [ClassifiedTable] {
+        // 第一遍：找出所有虚拟表及其模块名
+        var modules: [String: String] = [:] // 虚拟表名 -> 模块名
+        for entry in entries {
+            if let module = virtualTableModule(fromCreateSQL: entry.sql) {
+                modules[entry.name] = module
+            }
+        }
+
+        // 第二遍：非虚拟表按后缀回溯父虚拟表
+        return entries.map { entry in
+            if let module = modules[entry.name] {
+                return ClassifiedTable(name: entry.name, kind: .virtual, module: module, parentTable: nil)
+            }
+
+            for suffix in shadowTableSuffixes where entry.name.hasSuffix(suffix) {
+                let parent = String(entry.name.dropLast(suffix.count))
+                if !parent.isEmpty, modules[parent] != nil {
+                    return ClassifiedTable(name: entry.name, kind: .shadow, module: nil, parentTable: parent)
+                }
+            }
+
+            return ClassifiedTable(name: entry.name, kind: .table, module: nil, parentTable: nil)
+        }
     }
 
     /// 转义 SQL LIKE 模式中的特殊字符

@@ -9,15 +9,49 @@ import Foundation
 
 // MARK: - Data Models
 
+/// 表类别
+public enum DBTableKind: String, Codable, Sendable {
+    /// 普通表
+    case table
+    /// 虚拟表（`CREATE VIRTUAL TABLE ... USING xxx(...)`）
+    case virtual
+    /// 虚拟表的影子表（FTS5 的 `_data`/`_idx`/... 等）
+    case shadow
+}
+
 /// 表信息
 public struct DBTableInfo: Codable, Sendable {
     public let name: String
     public let rowCount: Int?
 
-    public init(name: String, rowCount: Int?) {
+    /// 表类别：`"table"` / `"virtual"` / `"shadow"`，缺省视为 `"table"`
+    public let kind: String?
+
+    /// 虚拟表的模块名（小写），如 `"fts5"`；非虚拟表为 nil
+    public let module: String?
+
+    /// 影子表所属的虚拟表名；非影子表为 nil
+    public let parentTable: String?
+
+    public init(
+        name: String,
+        rowCount: Int?,
+        kind: String? = nil,
+        module: String? = nil,
+        parentTable: String? = nil
+    ) {
         self.name = name
         self.rowCount = rowCount
+        self.kind = kind
+        self.module = module
+        self.parentTable = parentTable
     }
+
+    /// 是否为影子表（缺省视为普通表）
+    public var isShadow: Bool { kind == DBTableKind.shadow.rawValue }
+
+    /// 是否为虚拟表
+    public var isVirtual: Bool { kind == DBTableKind.virtual.rawValue }
 }
 
 /// 列信息
