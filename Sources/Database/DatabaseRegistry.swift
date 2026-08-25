@@ -464,8 +464,8 @@ public final class DatabaseRegistry: @unchecked Sendable {
     }
 
     /// 从路径中提取用户标识符
-    /// - Parameter path: 数据库路径（如 /path/to/Documents/{userUuid}/im/xxx.db）
-    /// - Returns: 用户标识符（如 userUuid）
+    /// - Parameter path: 数据库路径（如 /path/to/Documents/{userId}/data/xxx.db）
+    /// - Returns: 用户标识符（如 userId）
     private func extractUserIdentifier(from path: String) -> String? {
         // 查找 "Documents/" 后的第一个路径组件
         let components = path.components(separatedBy: "/")
