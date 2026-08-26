@@ -171,9 +171,9 @@ DatabaseRegistry.shared.autoDiscover(in: documentsURL)
 
 ```swift
 // family / role / note / order 的语义由宿主 App 决定，Probe 只透传
-DatabaseRegistry.shared.setFamily(dbId: "main", family: "app", role: "主库", note: "不可再生 · 必须备份", order: 0)
-DatabaseRegistry.shared.setFamily(dbId: "search_index", family: "app", role: "FTS 索引", note: "可重建 · 不备份", order: 1)
-DatabaseRegistry.shared.setFamily(dbId: "archive_0", family: "app", role: "归档分片 0", note: "可再生 · 不备份", order: 100)
+DatabaseRegistry.shared.setFamily(dbId: "db-1", family: "family-a", role: "role-1", note: "note-1", order: 0)
+DatabaseRegistry.shared.setFamily(dbId: "db-2", family: "family-a", role: "role-2", note: "note-2", order: 1)
+DatabaseRegistry.shared.setFamily(dbId: "db-3", family: "family-a", role: "role-3", note: "note-3", order: 2)
 
 // WebUI 点「刷新」时重扫目录，让运行期新出现 / 被删除重建的库文件也能被看到
 // 注意：Probe 会在非主线程同步调用它，回调内部不要再 DispatchQueue.main.sync

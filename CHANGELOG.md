@@ -11,8 +11,7 @@
 
 ### 变更
 
-- **文档与测试夹具整理**: README / 代码注释 / 单测夹具统一改用通用的示例库名与表名
-  （`main.sqlite` / `search_index.sqlite` / `archive_N.sqlite`、`notes` / `notes_fts`），
+- **文档与测试夹具整理**: README / 代码注释 / 单测夹具统一改用与宿主无关的中性占位名，
   与具体宿主 App 解耦；无 API 变更，无行为变更
 
 ---
@@ -22,7 +21,7 @@
 ### 新增
 
 - **多库（库族）标注**: `DatabaseDescriptor` 新增 `family` / `familyRole` / `familyNote` / `familyOrder` 四个可选字段，
-  供宿主 App 把同一目录下的多个库（如 `main.sqlite` / `search_index.sqlite` / `archive_N.sqlite`）在 Inspector 中归组展示；
+  供宿主 App 把同一目录下的多个库在 Inspector 中归组展示；
   Probe 只透传，不做语义推断
 - **`DatabaseRegistry.setFamily(dbId:family:role:note:order:)`**: 标注 / 清除库族信息
 - **`DatabaseRegistry.refreshHandler`**: WebUI 点「刷新」（`db.listDatabases`）时，Probe 会在列举数据库之前
