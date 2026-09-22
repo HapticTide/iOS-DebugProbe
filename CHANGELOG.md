@@ -7,6 +7,26 @@
 
 ---
 
+## [1.2.8] - 2026-09-22
+
+### 新增
+
+- **列筛选下推到 SQL**: `fetchTablePage` 新增 `filters` 参数（`DBColumnFilter`：列名 + 值），
+  拼成 SQL `WHERE` 在设备端执行，只返回命中的行；
+  列名先过标识符校验再拼进 SQL，值一律参数绑定，`LIKE` 里的 `%` 和 `_` 做转义；
+  值为 `"null"`（不区分大小写）时匹配 NULL 单元格，否则做大小写不敏感的包含匹配
+- **`DBTablePageResult.filteredTotalRows`**: 命中筛选的行数，供调用方按它算分页页数；
+  没有筛选条件时为 `nil`，`totalRows` 仍是整表行数
+  （此前筛选只在 Web 端对当前页做，页数按整表行数算，大表上筛完仍有大量空页）
+
+### 变更
+
+- `DBInspector` 协议的 `fetchTablePage` 增加 `filters` 参数；
+  `SQLiteInspector` 的同名方法给了默认值 `[]`，既有调用点无需改动
+- `targetRowId` 的页码换算也带上筛选条件，否则跳转会落到筛选前的页码
+
+---
+
 ## [1.2.7] - 2026-08-25
 
 ### 变更
