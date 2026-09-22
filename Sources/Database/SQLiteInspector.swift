@@ -144,7 +144,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         pageSize: Int,
         orderBy: String?,
         ascending: Bool,
-        targetRowId: String? = nil
+        targetRowId: String? = nil,
+        filters: [DBColumnFilter] = []
     ) async throws -> DBTablePageResult {
         guard let url = registry.url(for: dbId) else {
             throw DBInspectorError.databaseNotFound(dbId)
@@ -173,6 +174,11 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             throw DBInspectorError.invalidQuery("Invalid column name for orderBy")
         }
 
+        // 验证筛选列名安全性（列名会拼进 SQL，值走参数绑定）
+        for filter in filters where !isValidIdentifier(filter.column) {
+            throw DBInspectorError.invalidQuery("Invalid column name for filter: \(filter.column)")
+        }
+
         // 限制 pageSize
         let safePageSize = min(max(1, pageSize), maxPageSize)
         let safePage = max(1, page)
@@ -185,7 +191,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             pageSize: safePageSize,
             orderBy: orderBy,
             ascending: ascending,
-            targetRowId: targetRowId
+            targetRowId: targetRowId,
+            filters: filters
         )
     }
 
@@ -540,7 +547,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         pageSize: Int,
         orderBy: String?,
         ascending: Bool,
-        targetRowId: String?
+        targetRowId: String?,
+        filters: [DBColumnFilter]
     ) async throws -> DBTablePageResult {
         let db = try await openDatabase(at: url, dbId: dbId)
         defer { sqlite3_close(db) }
@@ -553,8 +561,21 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         // 获取列信息
         let columns = try queryColumnsInternal(db: db, table: table)
 
-        // 获取总行数
+        // 获取总行数（整表，与筛选无关）
         let totalRows = try? getRowCount(db: db, table: table)
+
+        // 构建筛选子句：列名已校验过，值一律走参数绑定
+        let (whereClause, filterValues) = buildFilterClause(filters)
+
+        // 命中筛选的行数：分页页数按它算，没有筛选条件时为 nil
+        let filteredTotalRows: Int? = filters.isEmpty
+            ? nil
+            : try getFilteredRowCount(
+                db: db,
+                table: table,
+                whereClause: whereClause,
+                values: filterValues
+            )
 
         // 构建排序子句
         var orderClause = ""
@@ -572,7 +593,7 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
                 countSQL = """
                     WITH ordered_rows AS (
                         SELECT rowid AS rid, ROW_NUMBER() OVER (\(orderClause.isEmpty ? "" : "ORDER BY \"\(orderBy)\" \(ascending ? "ASC" : "DESC")")) AS rn
-                        FROM "\(table)"
+                        FROM "\(table)"\(whereClause)
                     )
                     SELECT rn FROM ordered_rows WHERE rid = ?
                     """
@@ -581,7 +602,7 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
                 countSQL = """
                     WITH ordered_rows AS (
                         SELECT rowid AS rid, ROW_NUMBER() OVER (ORDER BY rowid) AS rn
-                        FROM "\(table)"
+                        FROM "\(table)"\(whereClause)
                     )
                     SELECT rn FROM ordered_rows WHERE rid = ?
                     """
@@ -590,7 +611,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             var countStmt: OpaquePointer?
             if sqlite3_prepare_v2(db, countSQL, -1, &countStmt, nil) == SQLITE_OK {
                 defer { sqlite3_finalize(countStmt) }
-                sqlite3_bind_int64(countStmt, 1, targetRowIdInt)
+                let rowIdIndex = bindFilterValues(filterValues, to: countStmt)
+                sqlite3_bind_int64(countStmt, rowIdIndex, targetRowIdInt)
 
                 if sqlite3_step(countStmt) == SQLITE_ROW {
                     let rowNumber = Int(sqlite3_column_int64(countStmt, 0))
@@ -601,11 +623,15 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
                 }
             } else if orderBy == nil {
                 // 兼容旧版 SQLite（无窗口函数）：按 rowid 计算位置
-                let fallbackSQL = "SELECT COUNT(*) FROM \"\(table)\" WHERE rowid <= ?"
+                let fallbackWhere = whereClause.isEmpty
+                    ? " WHERE rowid <= ?"
+                    : "\(whereClause) AND rowid <= ?"
+                let fallbackSQL = "SELECT COUNT(*) FROM \"\(table)\"\(fallbackWhere)"
                 var fallbackStmt: OpaquePointer?
                 if sqlite3_prepare_v2(db, fallbackSQL, -1, &fallbackStmt, nil) == SQLITE_OK {
                     defer { sqlite3_finalize(fallbackStmt) }
-                    sqlite3_bind_int64(fallbackStmt, 1, targetRowIdInt)
+                    let rowIdIndex = bindFilterValues(filterValues, to: fallbackStmt)
+                    sqlite3_bind_int64(fallbackStmt, rowIdIndex, targetRowIdInt)
                     if sqlite3_step(fallbackStmt) == SQLITE_ROW {
                         let rowNumber = Int(sqlite3_column_int64(fallbackStmt, 0))
                         if rowNumber > 0 {
@@ -617,7 +643,7 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
         }
 
         // 构建查询 SQL（包含 rowid 用于跳转高亮）
-        var sql = "SELECT rowid AS _rowid, * FROM \"\(table)\""
+        var sql = "SELECT rowid AS _rowid, * FROM \"\(table)\"\(whereClause)"
         sql += orderClause
 
         let offset = (actualPage - 1) * pageSize
@@ -628,6 +654,8 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             throw DBInspectorError.internalError("Failed to prepare statement")
         }
         defer { sqlite3_finalize(stmt) }
+
+        bindFilterValues(filterValues, to: stmt)
 
         var rows: [DBRow] = []
         let columnCount = sqlite3_column_count(stmt)
@@ -650,9 +678,84 @@ public final class SQLiteInspector: DBInspector, @unchecked Sendable {
             page: actualPage,
             pageSize: pageSize,
             totalRows: totalRows,
+            filteredTotalRows: filteredTotalRows,
             columns: columns,
             rows: rows
         )
+    }
+
+    // MARK: - 列筛选
+
+    /// 把列筛选拼成 WHERE 子句，返回子句与待绑定的值（按占位符出现顺序）
+    ///
+    /// 语义对齐 Web 端的列筛选：值为 "null"（不区分大小写）时匹配 NULL 单元格，
+    /// 否则做大小写不敏感的包含匹配
+    private func buildFilterClause(_ filters: [DBColumnFilter]) -> (clause: String, values: [String]) {
+        guard !filters.isEmpty else { return ("", []) }
+
+        var conditions: [String] = []
+        var values: [String] = []
+
+        for filter in filters {
+            if filter.value.lowercased() == "null" {
+                conditions.append("\"\(filter.column)\" IS NULL")
+            } else {
+                // CAST 成 TEXT 才能对数字、BLOB 列做一致的包含匹配
+                conditions.append("CAST(\"\(filter.column)\" AS TEXT) LIKE ? ESCAPE '\\'")
+                values.append("%\(escapeLikePattern(filter.value))%")
+            }
+        }
+
+        return (" WHERE " + conditions.joined(separator: " AND "), values)
+    }
+
+    /// 转义 LIKE 模式里的通配符，避免用户输入的 % 和 _ 被当成通配符
+    private func escapeLikePattern(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+    }
+
+    /// 按顺序绑定筛选值，返回下一个可用的参数序号
+    @discardableResult
+    private func bindFilterValues(
+        _ values: [String],
+        to stmt: OpaquePointer?,
+        from startIndex: Int32 = 1
+    ) -> Int32 {
+        // SQLITE_TRANSIENT：让 SQLite 复制字符串，避免 Swift 临时缓冲区提前释放
+        let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+        var index = startIndex
+        for value in values {
+            sqlite3_bind_text(stmt, index, value, -1, transient)
+            index += 1
+        }
+        return index
+    }
+
+    /// 统计命中筛选的行数
+    private func getFilteredRowCount(
+        db: OpaquePointer,
+        table: String,
+        whereClause: String,
+        values: [String]
+    ) throws -> Int {
+        let sql = "SELECT COUNT(*) FROM \"\(table)\"\(whereClause)"
+        var stmt: OpaquePointer?
+
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw DBInspectorError.internalError("Failed to count filtered rows")
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        bindFilterValues(values, to: stmt)
+
+        guard sqlite3_step(stmt) == SQLITE_ROW else {
+            throw DBInspectorError.internalError("Failed to count filtered rows")
+        }
+
+        return Int(sqlite3_column_int64(stmt, 0))
     }
 
     private func executeQueryInternal(at url: URL, dbId: String, query: String) async throws -> DBQueryResponse {

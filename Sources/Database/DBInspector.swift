@@ -86,6 +86,20 @@ public struct DBRow: Codable, Sendable {
     }
 }
 
+/// 列筛选条件
+///
+/// 语义与 Web 端列筛选一致：对列值做大小写不敏感的包含匹配；
+/// `value` 为 "null"（不区分大小写）时匹配 NULL 单元格。
+public struct DBColumnFilter: Codable, Sendable, Equatable {
+    public let column: String
+    public let value: String
+
+    public init(column: String, value: String) {
+        self.column = column
+        self.value = value
+    }
+}
+
 /// 分页查询结果
 public struct DBTablePageResult: Codable, Sendable {
     public let dbId: String
@@ -93,6 +107,10 @@ public struct DBTablePageResult: Codable, Sendable {
     public let page: Int
     public let pageSize: Int
     public let totalRows: Int?
+    /// 应用列筛选后的行数；没有筛选条件时为 nil
+    ///
+    /// 分页页数要按它算，`totalRows` 始终是整表行数
+    public let filteredTotalRows: Int?
     public let columns: [DBColumnInfo]
     public let rows: [DBRow]
 
@@ -102,6 +120,7 @@ public struct DBTablePageResult: Codable, Sendable {
         page: Int,
         pageSize: Int,
         totalRows: Int?,
+        filteredTotalRows: Int? = nil,
         columns: [DBColumnInfo],
         rows: [DBRow]
     ) {
@@ -110,6 +129,7 @@ public struct DBTablePageResult: Codable, Sendable {
         self.page = page
         self.pageSize = pageSize
         self.totalRows = totalRows
+        self.filteredTotalRows = filteredTotalRows
         self.columns = columns
         self.rows = rows
     }
@@ -195,6 +215,7 @@ public protocol DBInspector: Sendable {
     /// 分页获取表数据
     /// - Parameters:
     ///   - targetRowId: 可选的目标行 ID，传入时会自动计算并跳转到包含该行的页面
+    ///   - filters: 列筛选条件，会下推成 SQL WHERE，分页与计数都只统计命中的行
     func fetchTablePage(
         dbId: String,
         table: String,
@@ -202,6 +223,7 @@ public protocol DBInspector: Sendable {
         pageSize: Int,
         orderBy: String?,
         ascending: Bool,
-        targetRowId: String?
+        targetRowId: String?,
+        filters: [DBColumnFilter]
     ) async throws -> DBTablePageResult
 }

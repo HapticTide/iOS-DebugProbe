@@ -35,6 +35,7 @@ public struct DBCommand: Codable, Sendable {
     public let maxResultsPerTable: Int? // 每表最大结果数
     public let targetRowId: String? // 目标行 ID
     public let rowIds: [String]? // 批量 rowid
+    public let filters: [DBColumnFilter]? // 列筛选条件（下推成 SQL WHERE）
 
     public init(
         requestId: String,
@@ -49,7 +50,8 @@ public struct DBCommand: Codable, Sendable {
         keyword: String? = nil,
         maxResultsPerTable: Int? = nil,
         targetRowId: String? = nil,
-        rowIds: [String]? = nil
+        rowIds: [String]? = nil,
+        filters: [DBColumnFilter]? = nil
     ) {
         self.requestId = requestId
         self.kind = kind
@@ -64,6 +66,7 @@ public struct DBCommand: Codable, Sendable {
         self.maxResultsPerTable = maxResultsPerTable
         self.targetRowId = targetRowId
         self.rowIds = rowIds
+        self.filters = filters
     }
 }
 
